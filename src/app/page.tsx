@@ -1,0 +1,139 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { StatusCard } from "@/components/status-card";
+import { Thermometer, Droplets, FlaskConical, Gauge, Zap, Activity } from "lucide-react";
+import { relativeTime, formatNumber } from "@/lib/format";
+
+function phStatus(v: number): "ok" | "warn" | "critical" {
+  if (v >= 7.2 && v <= 7.6) return "ok";
+  if (v >= 7.0 && v <= 7.8) return "warn";
+  return "critical";
+}
+
+function bromineStatus(v: number): "ok" | "warn" | "critical" {
+  if (v >= 3.0 && v <= 5.0) return "ok";
+  if (v >= 2.0 && v <= 6.0) return "warn";
+  return "critical";
+}
+
+function tempStatus(v: number): "ok" | "warn" | "critical" {
+  if (v >= 36 && v <= 39) return "ok";
+  if (v >= 34 && v <= 40) return "warn";
+  return "critical";
+}
+
+interface LatestData {
+  temperature: { value: number; unit: string; timestamp: string } | null;
+  pumpStatus: { value: number; timestamp: string } | null;
+  ph: { value: number; timestamp: string } | null;
+  bromine: { value: number; unit: string; timestamp: string } | null;
+  alkalinity: { value: number; unit: string; timestamp: string } | null;
+  orp: { value: number; unit: string; timestamp: string } | null;
+  powerW: { value: number; unit: string; timestamp: string } | null;
+  energyKwh: { value: number; unit: string; timestamp: string } | null;
+}
+
+export default function OverviewPage() {
+  const [data, setData] = useState<LatestData | null>(null);
+
+  useEffect(() => {
+    fetch("/api/readings?type=latest")
+      .then((r) => r.json())
+      .then(setData);
+  }, []);
+
+  if (!data) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <p className="text-sm text-muted-foreground">Lade Daten...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Übersicht</h1>
+        <p className="text-base text-muted-foreground">
+          Armstark Lotus 460 SwimSpa &mdash; Aktuelle Werte
+        </p>
+      </div>
+
+      {/* Tier 1: Hero metrics — Temperature + pH */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <StatusCard
+          title="Wassertemperatur"
+          value={data.temperature ? formatNumber(data.temperature.value) : "–"}
+          unit="°C"
+          icon={Thermometer}
+          status={data.temperature ? tempStatus(data.temperature.value) : undefined}
+          subtitle={data.temperature ? relativeTime(data.temperature.timestamp) : undefined}
+          variant="hero"
+          accentColor="#ef4444"
+        />
+        <StatusCard
+          title="pH-Wert"
+          value={data.ph ? formatNumber(data.ph.value, 2) : "–"}
+          icon={Droplets}
+          status={data.ph ? phStatus(data.ph.value) : undefined}
+          subtitle={data.ph ? relativeTime(data.ph.timestamp) : undefined}
+          variant="hero"
+          accentColor="#3b82f6"
+        />
+      </div>
+
+      {/* Tier 2: Secondary metrics with colored accent borders */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatusCard
+          title="Brom"
+          value={data.bromine ? formatNumber(data.bromine.value) : "–"}
+          unit="mg/l"
+          icon={FlaskConical}
+          status={data.bromine ? bromineStatus(data.bromine.value) : undefined}
+          subtitle={data.bromine ? relativeTime(data.bromine.timestamp) : undefined}
+          accentColor="#8b5cf6"
+        />
+        <StatusCard
+          title="ORP (Redox)"
+          value={data.orp ? Math.round(data.orp.value) : "–"}
+          unit="mV"
+          icon={Gauge}
+          subtitle={data.orp ? `BlueConnect · ${relativeTime(data.orp.timestamp)}` : "BlueConnect (Demo)"}
+          accentColor="#f97316"
+        />
+        <StatusCard
+          title="Aktuelle Leistung"
+          value={data.powerW ? Math.round(data.powerW.value) : "–"}
+          unit="W"
+          icon={Zap}
+          subtitle={data.powerW ? relativeTime(data.powerW.timestamp) : undefined}
+          accentColor="#f59e0b"
+        />
+      </div>
+
+      {/* Tier 3: Informational — compact */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <StatusCard
+          title="Gesamtverbrauch"
+          value={data.energyKwh ? formatNumber(data.energyKwh.value, 0) : "–"}
+          unit="kWh"
+          icon={Activity}
+          subtitle="Shelly 3EM"
+          variant="compact"
+        />
+        <StatusCard
+          title="Pumpe"
+          value={data.pumpStatus?.value === 1 ? "Läuft" : "Aus"}
+          icon={Activity}
+          status={data.pumpStatus?.value === 1 ? "ok" : undefined}
+          subtitle={data.pumpStatus ? relativeTime(data.pumpStatus.timestamp) : undefined}
+          variant="compact"
+        />
+      </div>
+    </div>
+  );
+}
