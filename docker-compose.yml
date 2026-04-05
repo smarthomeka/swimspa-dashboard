@@ -1,0 +1,14 @@
+services:
+  dashboard:
+    build: .
+    container_name: swimspa-dashboard
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    volumes:
+      - swimspa-data:/app/data
+
+volumes:
+  swimspa-data:
