@@ -1,4 +1,4 @@
-import { db } from "./index";
+import { db, ensureDb } from "./index";
 import { sensorReadings, dosingLog, aiRecommendations, dosingResponses } from "./schema";
 import { sql } from "drizzle-orm";
 
@@ -6,23 +6,25 @@ function randomBetween(min: number, max: number, decimals = 1): number {
   return parseFloat((Math.random() * (max - min) + min).toFixed(decimals));
 }
 
-export function clearAllData() {
-  db.delete(dosingResponses).run();
-  db.delete(aiRecommendations).run();
-  db.delete(dosingLog).run();
-  db.delete(sensorReadings).run();
+export async function clearAllData() {
+  await ensureDb();
+  await db.delete(dosingResponses).run();
+  await db.delete(aiRecommendations).run();
+  await db.delete(dosingLog).run();
+  await db.delete(sensorReadings).run();
 }
 
-export function seedMockData(force = false) {
+export async function seedMockData(force = false) {
+  await ensureDb();
   // Check if we already have data
-  const count = db
+  const count = await db
     .select({ count: sql<number>`count(*)` })
     .from(sensorReadings)
     .get();
   if (!force && count && count.count > 0) return;
 
   if (force) {
-    clearAllData();
+    await clearAllData();
   }
 
   const now = new Date();
@@ -126,7 +128,7 @@ export function seedMockData(force = false) {
   // Batch insert
   const batchSize = 500;
   for (let i = 0; i < readings.length; i += batchSize) {
-    db.insert(sensorReadings).values(readings.slice(i, i + batchSize)).run();
+    await db.insert(sensorReadings).values(readings.slice(i, i + batchSize)).run();
   }
 
   // Seed dosing logs — realistic entries every few days
@@ -164,7 +166,7 @@ export function seedMockData(force = false) {
   }
 
   for (let i = 0; i < dosingEntries.length; i += batchSize) {
-    db.insert(dosingLog).values(dosingEntries.slice(i, i + batchSize)).run();
+    await db.insert(dosingLog).values(dosingEntries.slice(i, i + batchSize)).run();
   }
 
   console.log(`Seeded ${readings.length} sensor readings, ${dosingEntries.length} dosing logs`);

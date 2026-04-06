@@ -1,5 +1,5 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import { createClient } from "@libsql/client";
+import { drizzle } from "drizzle-orm/libsql";
 import * as schema from "./schema";
 import { mkdirSync } from "fs";
 import { join } from "path";
@@ -7,13 +7,11 @@ import { join } from "path";
 const dbPath = join(process.cwd(), "data", "swimspa.db");
 mkdirSync(join(process.cwd(), "data"), { recursive: true });
 
-const sqlite = new Database(dbPath);
-sqlite.pragma("journal_mode = WAL");
-
-export const db = drizzle(sqlite, { schema });
+const client = createClient({ url: `file:${dbPath}` });
+export const db = drizzle(client, { schema });
 
 // Auto-create tables if they don't exist
-sqlite.exec(`
+const initPromise = client.executeMultiple(`
   CREATE TABLE IF NOT EXISTS sensor_readings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT NOT NULL,
@@ -57,3 +55,7 @@ sqlite.exec(`
     timestamp TEXT NOT NULL
   );
 `);
+
+export async function ensureDb() {
+  await initPromise;
+}

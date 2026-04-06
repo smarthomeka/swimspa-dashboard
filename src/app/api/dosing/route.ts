@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   const since = new Date();
   since.setDate(since.getDate() - days);
 
-  const logs = getDosingLogs(since, chemical);
+  const logs = await getDosingLogs(since, chemical);
   return NextResponse.json({ logs, chemicals: CHEMICALS });
 }
 
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const entry = insertDosingLog({
+  const entry = await insertDosingLog({
     chemical,
     amountMl,
     notes: notes || null,
@@ -58,6 +58,6 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "id is required" }, { status: 400 });
   }
 
-  deleteDosingLog(parseInt(id, 10));
+  await deleteDosingLog(parseInt(id, 10));
   return NextResponse.json({ ok: true });
 }

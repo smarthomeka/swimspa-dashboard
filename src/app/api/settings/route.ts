@@ -4,7 +4,7 @@ import { getAllSettings, upsertProviderSetting, type Provider } from "@/lib/db/s
 const VALID_PROVIDERS = new Set(["gecko", "labcom", "shelly", "blueconnect"]);
 
 export async function GET() {
-  return Response.json(getAllSettings());
+  return Response.json(await getAllSettings());
 }
 
 export async function PUT(request: NextRequest) {
@@ -23,6 +23,6 @@ export async function PUT(request: NextRequest) {
     return Response.json({ error: "config must be an object" }, { status: 400 });
   }
 
-  upsertProviderSetting(provider as Provider, enabled, config);
+  await upsertProviderSetting(provider as Provider, enabled, config);
   return Response.json({ ok: true });
 }

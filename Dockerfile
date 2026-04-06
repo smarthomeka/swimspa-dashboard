@@ -2,9 +2,6 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 
-# better-sqlite3 needs build tools for native compilation
-RUN apk add --no-cache python3 make g++
-
 COPY package.json package-lock.json ./
 RUN npm ci
 
@@ -31,11 +28,6 @@ RUN adduser --system --uid 1001 nextjs
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-# better-sqlite3 native addon must be copied explicitly (not traced by Next.js)
-COPY --from=deps --chown=nextjs:nodejs /app/node_modules/better-sqlite3 ./node_modules/better-sqlite3
-COPY --from=deps --chown=nextjs:nodejs /app/node_modules/bindings ./node_modules/bindings
-COPY --from=deps --chown=nextjs:nodejs /app/node_modules/file-uri-to-path ./node_modules/file-uri-to-path
 
 # SQLite data directory
 RUN mkdir -p /app/data && chown nextjs:nodejs /app/data

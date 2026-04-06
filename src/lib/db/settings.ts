@@ -1,4 +1,4 @@
-import { db } from "./index";
+import { db, ensureDb } from "./index";
 import { apiSettings } from "./schema";
 import { eq } from "drizzle-orm";
 
@@ -13,8 +13,9 @@ export type Provider = keyof ProviderConfig;
 
 const PROVIDERS: Provider[] = ["gecko", "labcom", "shelly", "blueconnect"];
 
-export function getAllSettings() {
-  const rows = db.select().from(apiSettings).all();
+export async function getAllSettings() {
+  await ensureDb();
+  const rows = await db.select().from(apiSettings).all();
   const map: Record<string, { enabled: boolean; config: Record<string, string> }> = {};
   for (const row of rows) {
     map[row.provider] = {
@@ -31,8 +32,9 @@ export function getAllSettings() {
   return map;
 }
 
-export function getProviderSetting(provider: Provider) {
-  const row = db
+export async function getProviderSetting(provider: Provider) {
+  await ensureDb();
+  const row = await db
     .select()
     .from(apiSettings)
     .where(eq(apiSettings.provider, provider))
@@ -44,27 +46,28 @@ export function getProviderSetting(provider: Provider) {
   };
 }
 
-export function isProviderConfigured(provider: Provider): boolean {
-  const s = getProviderSetting(provider);
+export async function isProviderConfigured(provider: Provider): Promise<boolean> {
+  const s = await getProviderSetting(provider);
   if (!s.enabled) return false;
   const values = Object.values(s.config);
   return values.length > 0 && values.some((v) => v.trim() !== "");
 }
 
-export function upsertProviderSetting(
+export async function upsertProviderSetting(
   provider: Provider,
   enabled: boolean,
   config: Record<string, string>
 ) {
+  await ensureDb();
   const now = new Date().toISOString();
-  const existing = db
+  const existing = await db
     .select()
     .from(apiSettings)
     .where(eq(apiSettings.provider, provider))
     .get();
 
   if (existing) {
-    db.update(apiSettings)
+    await db.update(apiSettings)
       .set({
         enabled: enabled ? 1 : 0,
         config: JSON.stringify(config),
@@ -73,7 +76,7 @@ export function upsertProviderSetting(
       .where(eq(apiSettings.provider, provider))
       .run();
   } else {
-    db.insert(apiSettings)
+    await db.insert(apiSettings)
       .values({
         provider,
         enabled: enabled ? 1 : 0,

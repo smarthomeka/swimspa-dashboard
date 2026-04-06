@@ -20,22 +20,21 @@ const TARGET_RANGES = {
   orp: { min: 650, max: 750, unit: "mV" },
 };
 
-function buildContext() {
-  const latest = getLatestValues();
+async function buildContext() {
+  const latest = await getLatestValues();
   const now = new Date();
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-  const dosingLogs = getDosingLogs(sevenDaysAgo);
-  const energyData = getDailyEnergyConsumption(sevenDaysAgo);
-  const dosingResponses = getDosingResponses();
-
-  // Get 7-day history for water metrics
-  const phHistory = getReadings("labcom", "ph", sevenDaysAgo, 500);
-  const bromineHistory = getReadings("labcom", "bromine", sevenDaysAgo, 500);
-  const alkalinityHistory = getReadings("labcom", "alkalinity", sevenDaysAgo, 500);
-  const orpHistory = getReadings("blueconnect", "orp", sevenDaysAgo, 500);
-  const tempHistory = getReadings("gecko", "temperature", sevenDaysAgo, 500);
+  const [dosingLogs, energyData, dosingResponsesData, phHistory, bromineHistory, alkalinityHistory, orpHistory, tempHistory] = await Promise.all([
+    getDosingLogs(sevenDaysAgo),
+    getDailyEnergyConsumption(sevenDaysAgo),
+    getDosingResponses(),
+    getReadings("labcom", "ph", sevenDaysAgo, 500),
+    getReadings("labcom", "bromine", sevenDaysAgo, 500),
+    getReadings("labcom", "alkalinity", sevenDaysAgo, 500),
+    getReadings("blueconnect", "orp", sevenDaysAgo, 500),
+    getReadings("gecko", "temperature", sevenDaysAgo, 500),
+  ]);
 
   return {
     currentValues: latest,
@@ -58,7 +57,7 @@ function buildContext() {
       consumptionKwh: d.maxKwh - d.minKwh,
       avgPowerW: d.avgPowerW,
     })),
-    dosingResponsePatterns: dosingResponses.slice(0, 20).map((r) => ({
+    dosingResponsePatterns: dosingResponsesData.slice(0, 20).map((r) => ({
       chemical: r.chemical,
       amountMl: r.amountMl,
       metricsBefore: JSON.parse(r.metricsBefore),
@@ -128,7 +127,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const userMessage = body.message as string | undefined;
 
-  const context = buildContext();
+  const context = await buildContext();
   const contextText = JSON.stringify(context, null, 2);
 
   const prompt = `Hier sind die aktuellen SwimSpa-Daten:\n\n\`\`\`json\n${contextText}\n\`\`\`\n\n${
@@ -170,7 +169,7 @@ export async function POST(request: NextRequest) {
         : String(result.result ?? stdout);
 
     // Store the recommendation
-    const stored = insertRecommendation({
+    const stored = await insertRecommendation({
       summary: text.slice(0, 200),
       recommendations: JSON.stringify({ text }),
       context: contextText,
@@ -194,7 +193,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET() {
-  const recent = getRecentRecommendations(10);
+  const recent = await getRecentRecommendations(10);
   return NextResponse.json({
     recommendations: recent.map((r) => ({
       id: r.id,

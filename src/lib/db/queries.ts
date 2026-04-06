@@ -1,9 +1,10 @@
-import { db } from "./index";
+import { db, ensureDb } from "./index";
 import { sensorReadings, dosingLog, aiRecommendations, dosingResponses } from "./schema";
 import type { NewDosingLogEntry } from "./schema";
 import { desc, eq, and, gte, sql } from "drizzle-orm";
 
-export function getLatestReading(source: string, metric: string) {
+export async function getLatestReading(source: string, metric: string) {
+  await ensureDb();
   return db
     .select()
     .from(sensorReadings)
@@ -15,12 +16,13 @@ export function getLatestReading(source: string, metric: string) {
     .get();
 }
 
-export function getReadings(
+export async function getReadings(
   source: string,
   metric: string,
   since: Date,
   limit = 5000
 ) {
+  await ensureDb();
   return db
     .select()
     .from(sensorReadings)
@@ -36,7 +38,8 @@ export function getReadings(
     .all();
 }
 
-export function getDailyEnergyConsumption(since: Date) {
+export async function getDailyEnergyConsumption(since: Date) {
+  await ensureDb();
   return db
     .select({
       date: sql<string>`date(timestamp)`.as("date"),
@@ -56,7 +59,8 @@ export function getDailyEnergyConsumption(since: Date) {
     .all();
 }
 
-export function getDosingLogs(since?: Date, chemical?: string) {
+export async function getDosingLogs(since?: Date, chemical?: string) {
+  await ensureDb();
   const conditions = [];
   if (since) conditions.push(gte(dosingLog.timestamp, since.toISOString()));
   if (chemical) conditions.push(eq(dosingLog.chemical, chemical));
@@ -69,15 +73,18 @@ export function getDosingLogs(since?: Date, chemical?: string) {
     .all();
 }
 
-export function insertDosingLog(entry: NewDosingLogEntry) {
+export async function insertDosingLog(entry: NewDosingLogEntry) {
+  await ensureDb();
   return db.insert(dosingLog).values(entry).returning().get();
 }
 
-export function deleteDosingLog(id: number) {
+export async function deleteDosingLog(id: number) {
+  await ensureDb();
   return db.delete(dosingLog).where(eq(dosingLog.id, id)).run();
 }
 
-export function getRecentRecommendations(limit = 10) {
+export async function getRecentRecommendations(limit = 10) {
+  await ensureDb();
   return db
     .select()
     .from(aiRecommendations)
@@ -86,17 +93,19 @@ export function getRecentRecommendations(limit = 10) {
     .all();
 }
 
-export function insertRecommendation(rec: {
+export async function insertRecommendation(rec: {
   summary: string;
   recommendations: string;
   context: string;
   model: string;
   timestamp: string;
 }) {
+  await ensureDb();
   return db.insert(aiRecommendations).values(rec).returning().get();
 }
 
-export function getDosingResponses(chemical?: string) {
+export async function getDosingResponses(chemical?: string) {
+  await ensureDb();
   const conditions = [];
   if (chemical) conditions.push(eq(dosingResponses.chemical, chemical));
   return db
@@ -108,7 +117,7 @@ export function getDosingResponses(chemical?: string) {
     .all();
 }
 
-export function insertDosingResponse(resp: {
+export async function insertDosingResponse(resp: {
   dosingLogId: number;
   chemical: string;
   amountMl: number;
@@ -117,18 +126,19 @@ export function insertDosingResponse(resp: {
   hoursElapsed: number;
   timestamp: string;
 }) {
+  await ensureDb();
   return db.insert(dosingResponses).values(resp).returning().get();
 }
 
-export function getLatestValues() {
-  const temp = getLatestReading("gecko", "temperature");
-  const pumpStatus = getLatestReading("gecko", "pump_status");
-  const ph = getLatestReading("labcom", "ph");
-  const bromine = getLatestReading("labcom", "bromine");
-  const alkalinity = getLatestReading("labcom", "alkalinity");
-  const orp = getLatestReading("blueconnect", "orp");
-  const powerW = getLatestReading("shelly", "power_w");
-  const energyKwh = getLatestReading("shelly", "energy_kwh");
+export async function getLatestValues() {
+  const temp = await getLatestReading("gecko", "temperature");
+  const pumpStatus = await getLatestReading("gecko", "pump_status");
+  const ph = await getLatestReading("labcom", "ph");
+  const bromine = await getLatestReading("labcom", "bromine");
+  const alkalinity = await getLatestReading("labcom", "alkalinity");
+  const orp = await getLatestReading("blueconnect", "orp");
+  const powerW = await getLatestReading("shelly", "power_w");
+  const energyKwh = await getLatestReading("shelly", "energy_kwh");
 
   return {
     temperature: temp ? { value: temp.value, unit: temp.unit, timestamp: temp.timestamp } : null,

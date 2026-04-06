@@ -3,20 +3,27 @@ import { getLatestValues, getReadings, getDailyEnergyConsumption } from "@/lib/d
 import { seedMockData } from "@/lib/db/seed";
 import { getAllSettings } from "@/lib/db/settings";
 
-// Ensure mock data exists for demo mode
-seedMockData();
+let seeded = false;
 
-function isDemoMode(): boolean {
-  const settings = getAllSettings();
+async function ensureMockData() {
+  if (!seeded) {
+    await seedMockData();
+    seeded = true;
+  }
+}
+
+async function isDemoMode(): Promise<boolean> {
+  const settings = await getAllSettings();
   return !Object.values(settings).some((s) => s.enabled);
 }
 
 export async function GET(request: NextRequest) {
+  await ensureMockData();
   const { searchParams } = request.nextUrl;
   const type = searchParams.get("type") ?? "latest";
 
   if (type === "latest") {
-    return NextResponse.json({ ...getLatestValues(), demoMode: isDemoMode() });
+    return NextResponse.json({ ...await getLatestValues(), demoMode: await isDemoMode() });
   }
 
   if (type === "history") {
@@ -25,7 +32,7 @@ export async function GET(request: NextRequest) {
     const days = parseInt(searchParams.get("days") ?? "7", 10);
     const since = new Date();
     since.setDate(since.getDate() - days);
-    const data = getReadings(source, metric, since);
+    const data = await getReadings(source, metric, since);
     return NextResponse.json(data);
   }
 
@@ -33,7 +40,7 @@ export async function GET(request: NextRequest) {
     const days = parseInt(searchParams.get("days") ?? "30", 10);
     const since = new Date();
     since.setDate(since.getDate() - days);
-    const data = getDailyEnergyConsumption(since);
+    const data = await getDailyEnergyConsumption(since);
     return NextResponse.json(data);
   }
 
