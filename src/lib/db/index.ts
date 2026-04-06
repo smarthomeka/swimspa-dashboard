@@ -38,4 +38,22 @@ sqlite.exec(`
     config TEXT NOT NULL DEFAULT '{}',
     updated_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS ai_recommendations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    summary TEXT NOT NULL,
+    recommendations TEXT NOT NULL,
+    context TEXT NOT NULL,
+    model TEXT NOT NULL,
+    timestamp TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS dosing_responses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dosing_log_id INTEGER NOT NULL,
+    chemical TEXT NOT NULL,
+    amount_ml REAL NOT NULL,
+    metrics_before TEXT NOT NULL,
+    metrics_after TEXT NOT NULL,
+    hours_elapsed REAL NOT NULL,
+    timestamp TEXT NOT NULL
+  );
 `);

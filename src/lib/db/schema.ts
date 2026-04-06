@@ -27,7 +27,29 @@ export const apiSettings = sqliteTable("api_settings", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const aiRecommendations = sqliteTable("ai_recommendations", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  summary: text("summary").notNull(), // markdown summary from Claude
+  recommendations: text("recommendations").notNull(), // JSON array of recommendation objects
+  context: text("context").notNull(), // JSON snapshot of input data sent to Claude
+  model: text("model").notNull(), // model used
+  timestamp: text("timestamp").notNull(),
+});
+
+export const dosingResponses = sqliteTable("dosing_responses", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  dosingLogId: integer("dosing_log_id").notNull(),
+  chemical: text("chemical").notNull(),
+  amountMl: real("amount_ml").notNull(),
+  metricsBefore: text("metrics_before").notNull(), // JSON: { ph, bromine, alkalinity, orp }
+  metricsAfter: text("metrics_after").notNull(), // JSON: same shape, measured ~24h later
+  hoursElapsed: real("hours_elapsed").notNull(),
+  timestamp: text("timestamp").notNull(),
+});
+
 export type DosingLogEntry = typeof dosingLog.$inferSelect;
 export type NewDosingLogEntry = typeof dosingLog.$inferInsert;
 export type ApiSetting = typeof apiSettings.$inferSelect;
 export type NewApiSetting = typeof apiSettings.$inferInsert;
+export type AiRecommendation = typeof aiRecommendations.$inferSelect;
+export type DosingResponse = typeof dosingResponses.$inferSelect;

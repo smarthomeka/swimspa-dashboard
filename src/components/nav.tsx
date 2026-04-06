@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Waves, Droplets, Zap, LayoutDashboard, Sun, Moon, Settings, FlaskConical } from "lucide-react";
+import { Waves, Droplets, Zap, LayoutDashboard, Sun, Moon, Settings, FlaskConical, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const links = [
@@ -11,6 +11,7 @@ const links = [
   { href: "/wasserqualitaet", label: "Wasserqualität", shortLabel: "Wasser", icon: Droplets },
   { href: "/dosierung", label: "Dosierung", shortLabel: "Dosierung", icon: FlaskConical },
   { href: "/energie", label: "Energie", shortLabel: "Energie", icon: Zap },
+  { href: "/assistent", label: "KI-Assistent", shortLabel: "KI", icon: Bot },
   { href: "/einstellungen", label: "Einstellungen", shortLabel: "Settings", icon: Settings },
 ];
 

@@ -1,5 +1,5 @@
 import { db } from "./index";
-import { sensorReadings, dosingLog } from "./schema";
+import { sensorReadings, dosingLog, aiRecommendations, dosingResponses } from "./schema";
 import type { NewDosingLogEntry } from "./schema";
 import { desc, eq, and, gte, sql } from "drizzle-orm";
 
@@ -75,6 +75,49 @@ export function insertDosingLog(entry: NewDosingLogEntry) {
 
 export function deleteDosingLog(id: number) {
   return db.delete(dosingLog).where(eq(dosingLog.id, id)).run();
+}
+
+export function getRecentRecommendations(limit = 10) {
+  return db
+    .select()
+    .from(aiRecommendations)
+    .orderBy(desc(aiRecommendations.timestamp))
+    .limit(limit)
+    .all();
+}
+
+export function insertRecommendation(rec: {
+  summary: string;
+  recommendations: string;
+  context: string;
+  model: string;
+  timestamp: string;
+}) {
+  return db.insert(aiRecommendations).values(rec).returning().get();
+}
+
+export function getDosingResponses(chemical?: string) {
+  const conditions = [];
+  if (chemical) conditions.push(eq(dosingResponses.chemical, chemical));
+  return db
+    .select()
+    .from(dosingResponses)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(dosingResponses.timestamp))
+    .limit(50)
+    .all();
+}
+
+export function insertDosingResponse(resp: {
+  dosingLogId: number;
+  chemical: string;
+  amountMl: number;
+  metricsBefore: string;
+  metricsAfter: string;
+  hoursElapsed: number;
+  timestamp: string;
+}) {
+  return db.insert(dosingResponses).values(resp).returning().get();
 }
 
 export function getLatestValues() {
