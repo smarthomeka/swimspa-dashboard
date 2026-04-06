@@ -20,6 +20,7 @@ type ProviderMeta = {
   label: string;
   description: string;
   icon: typeof Thermometer;
+  accentColor: string;
   fields: { key: string; label: string; placeholder: string; secret?: boolean }[];
 };
 
@@ -29,6 +30,7 @@ const PROVIDERS: ProviderMeta[] = [
     label: "Gecko in.Touch 2",
     description: "Armstark Lotus 460 Controller — Wassertemperatur, Pumpenstatus",
     icon: Thermometer,
+    accentColor: "#ef4444",
     fields: [
       { key: "apiUrl", label: "API URL", placeholder: "https://api.gecko.io" },
       { key: "apiKey", label: "API Key", placeholder: "Dein Gecko API Key", secret: true },
@@ -39,6 +41,7 @@ const PROVIDERS: ProviderMeta[] = [
     label: "Labcom PoolLab",
     description: "Wasserchemie — pH, Brom, Alkalinität",
     icon: FlaskConical,
+    accentColor: "#8b5cf6",
     fields: [
       { key: "apiUrl", label: "API URL", placeholder: "https://api.labcom.cloud" },
       { key: "apiKey", label: "API Key", placeholder: "Dein Labcom API Key", secret: true },
@@ -49,6 +52,7 @@ const PROVIDERS: ProviderMeta[] = [
     label: "Shelly 3EM",
     description: "Energiemonitoring — Leistung, Verbrauch",
     icon: Zap,
+    accentColor: "#ca8a04",
     fields: [
       { key: "host", label: "Host / IP", placeholder: "http://192.168.1.100" },
     ],
@@ -58,6 +62,7 @@ const PROVIDERS: ProviderMeta[] = [
     label: "BlueConnect",
     description: "ORP-Monitoring (optional)",
     icon: Radio,
+    accentColor: "#f97316",
     fields: [
       { key: "apiUrl", label: "API URL", placeholder: "https://api.blueconnect.io" },
       { key: "apiKey", label: "API Key", placeholder: "Dein BlueConnect API Key", secret: true },
@@ -89,16 +94,25 @@ function ProviderCard({
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
 
   return (
-    <Card className={data.enabled ? "ring-1 ring-primary/30" : ""}>
+    <Card className={`card-glow relative overflow-hidden transition-all duration-300 ${data.enabled ? "ring-1 ring-primary/20" : ""}`}>
+      {data.enabled && (
+        <div
+          className="absolute top-0 left-0 right-0 h-[2px]"
+          style={{ background: `linear-gradient(90deg, ${meta.accentColor}, transparent)` }}
+        />
+      )}
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-              <Icon className="h-5 w-5 text-primary" />
+            <div
+              className="flex h-10 w-10 items-center justify-center rounded-xl transition-colors"
+              style={{ backgroundColor: `${meta.accentColor}12` }}
+            >
+              <Icon className="h-5 w-5" style={{ color: meta.accentColor }} />
             </div>
             <div>
               <CardTitle className="text-base">{meta.label}</CardTitle>
-              <p className="text-xs text-muted-foreground">{meta.description}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{meta.description}</p>
             </div>
           </div>
           <label className="relative inline-flex cursor-pointer items-center">
@@ -108,7 +122,7 @@ function ProviderCard({
               onChange={(e) => onChange(meta.key, e.target.checked, data.config)}
               className="peer sr-only"
             />
-            <div className="h-6 w-11 rounded-full bg-muted transition-colors after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-background after:shadow after:transition-transform peer-checked:bg-primary peer-checked:after:translate-x-5" />
+            <div className="h-6 w-11 rounded-full bg-muted transition-colors after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-background after:shadow-sm after:transition-transform peer-checked:bg-primary peer-checked:after:translate-x-5" />
           </label>
         </div>
       </CardHeader>
@@ -116,7 +130,7 @@ function ProviderCard({
         <CardContent className="space-y-3 pt-0">
           {meta.fields.map((field) => (
             <div key={field.key}>
-              <label className="mb-1 block text-sm font-medium text-foreground">
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {field.label}
               </label>
               <div className="relative">
@@ -130,7 +144,7 @@ function ProviderCard({
                     })
                   }
                   placeholder={field.placeholder}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-all"
                 />
                 {field.secret && (
                   <button
@@ -141,7 +155,7 @@ function ProviderCard({
                         [field.key]: !prev[field.key],
                       }))
                     }
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                   >
                     {showSecrets[field.key] ? (
                       <EyeOff className="h-4 w-4" />
@@ -157,7 +171,7 @@ function ProviderCard({
             size="sm"
             onClick={() => onSave(meta.key)}
             disabled={saving}
-            className="mt-2"
+            className="mt-3"
           >
             {saving ? (
               <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
@@ -225,17 +239,22 @@ export default function EinstellungenPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      <div className="flex items-center justify-center py-32">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+          <p className="text-sm font-medium text-muted-foreground">Lade Einstellungen...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 animate-fade-up">
       <div>
-        <h1 className="text-2xl font-bold">Einstellungen</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="font-heading text-4xl font-semibold tracking-tight sm:text-5xl">
+          Einstellungen
+        </h1>
+        <p className="mt-1 text-base text-muted-foreground">
           API-Verbindungen konfigurieren.{" "}
           {configuredCount === 0
             ? "Aktuell werden Demo-Daten angezeigt."
@@ -244,18 +263,18 @@ export default function EinstellungenPage() {
       </div>
 
       {configuredCount === 0 && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
-          <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+          <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">
             Demo-Modus aktiv
           </p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground mt-0.5">
             Keine APIs konfiguriert — das Dashboard zeigt simulierte Testdaten an.
             Aktiviere eine oder mehrere APIs um Live-Daten zu sehen.
           </p>
         </div>
       )}
 
-      <div className="grid gap-4">
+      <div className="grid gap-5">
         {PROVIDERS.map((meta) => (
           <ProviderCard
             key={meta.key}

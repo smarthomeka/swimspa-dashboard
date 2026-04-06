@@ -24,7 +24,6 @@ function formatTimestamp(iso: string) {
 }
 
 function MarkdownContent({ text }: { text: string }) {
-  // Simple markdown rendering for bold, headers, lists, and code
   const lines = text.split("\n");
   const elements: React.ReactNode[] = [];
 
@@ -33,19 +32,19 @@ function MarkdownContent({ text }: { text: string }) {
 
     if (line.startsWith("## ")) {
       elements.push(
-        <h3 key={i} className="mt-4 mb-1.5 text-base font-semibold">
+        <h3 key={i} className="mt-5 mb-2 font-heading text-xl font-semibold">
           {renderInline(line.slice(3))}
         </h3>
       );
     } else if (line.startsWith("### ")) {
       elements.push(
-        <h4 key={i} className="mt-3 mb-1 text-sm font-semibold">
+        <h4 key={i} className="mt-4 mb-1.5 text-sm font-bold uppercase tracking-wider text-muted-foreground">
           {renderInline(line.slice(4))}
         </h4>
       );
     } else if (line.startsWith("- ") || line.startsWith("* ")) {
       elements.push(
-        <li key={i} className="ml-4 text-sm leading-relaxed list-disc">
+        <li key={i} className="ml-4 text-sm leading-relaxed list-disc marker:text-primary/40">
           {renderInline(line.slice(2))}
         </li>
       );
@@ -53,7 +52,7 @@ function MarkdownContent({ text }: { text: string }) {
       elements.push(<div key={i} className="h-2" />);
     } else {
       elements.push(
-        <p key={i} className="text-sm leading-relaxed">
+        <p key={i} className="text-sm leading-relaxed text-foreground/90">
           {renderInline(line)}
         </p>
       );
@@ -64,7 +63,6 @@ function MarkdownContent({ text }: { text: string }) {
 }
 
 function renderInline(text: string): React.ReactNode {
-  // Handle **bold** and `code`
   const parts: React.ReactNode[] = [];
   let remaining = text;
   let key = 0;
@@ -79,7 +77,7 @@ function renderInline(text: string): React.ReactNode {
       nextMatch = {
         index: boldMatch.index,
         length: boldMatch[0].length,
-        content: <strong key={`b${key}`}>{boldMatch[1]}</strong>,
+        content: <strong key={`b${key}`} className="font-semibold text-foreground">{boldMatch[1]}</strong>,
       };
     }
     if (codeMatch?.index !== undefined) {
@@ -88,7 +86,7 @@ function renderInline(text: string): React.ReactNode {
           index: codeMatch.index,
           length: codeMatch[0].length,
           content: (
-            <code key={`c${key}`} className="rounded bg-muted px-1 py-0.5 text-xs font-mono">
+            <code key={`c${key}`} className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-mono font-medium text-primary">
               {codeMatch[1]}
             </code>
           ),
@@ -150,7 +148,6 @@ export default function AssistentPage() {
         setError(data.error || "Fehler bei der Analyse.");
         return;
       }
-      // Prepend new recommendation
       setRecommendations((prev) => [
         { id: data.id, text: data.text, model: data.model, timestamp: data.timestamp },
         ...prev,
@@ -169,16 +166,19 @@ export default function AssistentPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 animate-fade-up">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">KI-Assistent</h1>
-        <p className="text-base text-muted-foreground">
+        <h1 className="font-heading text-4xl font-semibold tracking-tight sm:text-5xl">
+          KI-Assistent
+        </h1>
+        <p className="mt-1 text-base text-muted-foreground">
           Intelligente Empfehlungen für Wasserqualität und Energieverbrauch
         </p>
       </div>
 
       {/* Action Bar */}
-      <Card>
+      <Card className="card-glow relative overflow-hidden">
+        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-primary to-transparent" />
         <CardContent className="pt-6">
           <form onSubmit={handleSubmit} className="flex gap-3">
             <Input
@@ -204,8 +204,8 @@ export default function AssistentPage() {
 
       {/* Error */}
       {error && (
-        <Card className="border-destructive/50">
-          <CardContent className="flex items-center gap-3 pt-6 text-sm text-destructive">
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardContent className="flex items-center gap-3 pt-6 text-sm font-medium text-destructive">
             <AlertCircle className="h-4 w-4 shrink-0" />
             {error}
           </CardContent>
@@ -214,31 +214,36 @@ export default function AssistentPage() {
 
       {/* Recommendations */}
       {loading && recommendations.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            Lade Empfehlungen...
-          </CardContent>
-        </Card>
+        <div className="flex items-center justify-center py-20">
+          <div className="flex flex-col items-center gap-4">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+            <p className="text-sm font-medium text-muted-foreground">Lade Empfehlungen...</p>
+          </div>
+        </div>
       ) : recommendations.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Bot className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
-            <p className="text-muted-foreground">
+        <Card className="card-glow">
+          <CardContent className="py-16 text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
+              <Bot className="h-7 w-7 text-primary/60" />
+            </div>
+            <p className="text-sm text-muted-foreground">
               Noch keine Analysen vorhanden. Starte eine Tagesanalyse, um Empfehlungen zu erhalten.
             </p>
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-5">
           {recommendations.map((rec) => (
-            <Card key={rec.id}>
+            <Card key={rec.id} className="card-glow">
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center justify-between text-sm font-medium">
-                  <span className="flex items-center gap-2">
-                    <Bot className="h-4 w-4 text-primary" />
-                    KI-Analyse
+                  <span className="flex items-center gap-2.5">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-primary/10">
+                      <Bot className="h-3.5 w-3.5 text-primary" />
+                    </div>
+                    <span className="font-semibold">KI-Analyse</span>
                   </span>
-                  <span className="flex items-center gap-1 text-xs font-normal text-muted-foreground">
+                  <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
                     <Clock className="h-3 w-3" />
                     {formatTimestamp(rec.timestamp)}
                   </span>

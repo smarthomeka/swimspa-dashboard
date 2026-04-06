@@ -14,6 +14,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import { Zap, TrendingDown, Receipt } from "lucide-react";
 
 interface EnergyDay {
   date: string;
@@ -37,9 +38,12 @@ function ChartTooltip({ active, payload, label, formatter }: any) {
   if (!active || !payload?.length) return null;
   const [formattedValue, labelText] = formatter(payload[0].value);
   return (
-    <div className="rounded-xl border border-border/50 bg-card px-3 py-2 shadow-lg">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-0.5 text-sm font-semibold">{formattedValue} — {labelText}</p>
+    <div className="rounded-xl border border-border/50 bg-card px-4 py-2.5 shadow-xl card-glow">
+      <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
+      <p className="mt-0.5 text-sm font-bold tabular-nums">
+        {formattedValue}
+        <span className="ml-1.5 text-xs font-medium text-muted-foreground">{labelText}</span>
+      </p>
     </div>
   );
 }
@@ -79,12 +83,17 @@ export default function EnergyPage() {
   const avgDaily = dailyData.length > 0 ? totalKwh / dailyData.length : 0;
   const totalCost = totalKwh * 0.3;
 
+  const gridStroke = "oklch(0.88 0.005 185)";
+  const tickFill = "oklch(0.48 0.02 185)";
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 animate-fade-up">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Energieverbrauch</h1>
-        <p className="text-base text-muted-foreground">
-          Shelly 3EM &mdash; Stromverbrauch und Kosten
+        <h1 className="font-heading text-4xl font-semibold tracking-tight sm:text-5xl">
+          Energieverbrauch
+        </h1>
+        <p className="mt-1 text-base text-muted-foreground">
+          Shelly 3EM — Stromverbrauch und Kosten
         </p>
       </div>
 
@@ -97,45 +106,57 @@ export default function EnergyPage() {
       </Tabs>
 
       {/* Summary cards */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Gesamtverbrauch
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <span className="text-3xl font-extrabold tabular-nums">
+      <div className="grid gap-5 sm:grid-cols-3">
+        <Card className="card-glow relative overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-amber-500 to-transparent" />
+          <CardContent className="pt-5 pb-5">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/10">
+                <Zap className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+              </div>
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                Gesamtverbrauch
+              </span>
+            </div>
+            <span className="font-heading text-3xl font-bold tabular-nums">
               {totalKwh.toFixed(0).replace(".", ",")}
             </span>
-            <span className="ml-1.5 text-base text-muted-foreground">kWh</span>
+            <span className="ml-1.5 text-base font-medium text-muted-foreground">kWh</span>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Durchschnitt / Tag
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <span className="text-3xl font-extrabold tabular-nums">
+        <Card className="card-glow relative overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-teal-500 to-transparent" />
+          <CardContent className="pt-5 pb-5">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-teal-500/10">
+                <TrendingDown className="h-3.5 w-3.5 text-teal-600 dark:text-teal-400" />
+              </div>
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                Durchschnitt / Tag
+              </span>
+            </div>
+            <span className="font-heading text-3xl font-bold tabular-nums">
               {avgDaily.toFixed(1).replace(".", ",")}
             </span>
-            <span className="ml-1.5 text-base text-muted-foreground">kWh</span>
+            <span className="ml-1.5 text-base font-medium text-muted-foreground">kWh</span>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Geschätzte Kosten
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <span className="text-3xl font-extrabold tabular-nums">
+        <Card className="card-glow relative overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-emerald-500 to-transparent" />
+          <CardContent className="pt-5 pb-5">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10">
+                <Receipt className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                Geschätzte Kosten
+              </span>
+            </div>
+            <span className="font-heading text-3xl font-bold tabular-nums">
               {totalCost.toFixed(0).replace(".", ",")}
             </span>
-            <span className="ml-1.5 text-base text-muted-foreground">EUR</span>
-            <p className="text-xs text-muted-foreground mt-1">
+            <span className="ml-1.5 text-base font-medium text-muted-foreground">EUR</span>
+            <p className="text-[11px] font-medium text-muted-foreground mt-1">
               bei 0,30 EUR/kWh
             </p>
           </CardContent>
@@ -143,9 +164,10 @@ export default function EnergyPage() {
       </div>
 
       {/* Daily consumption bar chart */}
-      <Card>
+      <Card className="card-glow">
         <CardHeader>
-          <CardTitle className="text-base">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <span className="h-2 w-2 rounded-full bg-amber-500" />
             Täglicher Verbrauch (kWh)
           </CardTitle>
         </CardHeader>
@@ -155,23 +177,31 @@ export default function EnergyPage() {
               <BarChart data={dailyData}>
                 <defs>
                   <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.9} />
-                    <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.4} />
+                    <stop offset="0%" stopColor="#ca8a04" stopOpacity={0.85} />
+                    <stop offset="100%" stopColor="#ca8a04" stopOpacity={0.3} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid
                   horizontal={true}
                   vertical={false}
-                  stroke="oklch(0.9 0 0)"
+                  stroke={gridStroke}
                 />
                 <XAxis
                   dataKey="date"
                   tickFormatter={formatDateLabel}
-                  fontSize={12}
+                  fontSize={11}
                   interval="preserveStartEnd"
-                  tick={{ fill: "oklch(0.5 0 0)" }}
+                  tick={{ fill: tickFill }}
+                  axisLine={false}
+                  tickLine={false}
                 />
-                <YAxis fontSize={12} tick={{ fill: "oklch(0.5 0 0)" }} />
+                <YAxis
+                  fontSize={11}
+                  tick={{ fill: tickFill }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={40}
+                />
                 <Tooltip
                   content={
                     <ChartTooltip
@@ -202,10 +232,11 @@ export default function EnergyPage() {
       </Card>
 
       {/* Live power area chart */}
-      <Card>
+      <Card className="card-glow">
         <CardHeader>
-          <CardTitle className="text-base">
-            Leistungsverlauf (Watt) &mdash; letzte{" "}
+          <CardTitle className="flex items-center gap-2 text-base">
+            <span className="h-2 w-2 rounded-full bg-red-500" />
+            Leistungsverlauf (Watt) — letzte{" "}
             {Math.min(days, 7)} Tage
           </CardTitle>
         </CardHeader>
@@ -215,14 +246,14 @@ export default function EnergyPage() {
               <AreaChart data={powerData}>
                 <defs>
                   <linearGradient id="powerGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#ef4444" stopOpacity={0.15} />
-                    <stop offset="100%" stopColor="#ef4444" stopOpacity={0.02} />
+                    <stop offset="0%" stopColor="#ef4444" stopOpacity={0.2} />
+                    <stop offset="100%" stopColor="#ef4444" stopOpacity={0.01} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid
                   horizontal={true}
                   vertical={false}
-                  stroke="oklch(0.9 0 0)"
+                  stroke={gridStroke}
                 />
                 <XAxis
                   dataKey="timestamp"
@@ -235,11 +266,19 @@ export default function EnergyPage() {
                       minute: "2-digit",
                     });
                   }}
-                  fontSize={11}
+                  fontSize={10}
                   interval="preserveStartEnd"
-                  tick={{ fill: "oklch(0.5 0 0)" }}
+                  tick={{ fill: tickFill }}
+                  axisLine={false}
+                  tickLine={false}
                 />
-                <YAxis fontSize={12} tick={{ fill: "oklch(0.5 0 0)" }} />
+                <YAxis
+                  fontSize={11}
+                  tick={{ fill: tickFill }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={45}
+                />
                 <Tooltip
                   content={
                     <ChartTooltip
@@ -257,11 +296,11 @@ export default function EnergyPage() {
                   type="monotone"
                   dataKey="value"
                   stroke="#ef4444"
-                  strokeWidth={2}
+                  strokeWidth={1.5}
                   fill="url(#powerGrad)"
                   dot={false}
                   activeDot={{
-                    r: 5,
+                    r: 4,
                     stroke: "white",
                     strokeWidth: 2,
                     fill: "#ef4444",

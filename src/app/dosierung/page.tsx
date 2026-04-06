@@ -56,7 +56,6 @@ export default function DosingPage() {
   const [logs, setLogs] = useState<DosingEntry[]>([]);
   const [chemicals, setChemicals] = useState<string[]>([]);
 
-  // Form state
   const [chemical, setChemical] = useState<string>("");
   const [amount, setAmount] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
@@ -76,7 +75,6 @@ export default function DosingPage() {
     loadData();
   }, [loadData]);
 
-  // Default timestamp to now in local timezone
   useEffect(() => {
     const now = new Date();
     const offset = now.getTimezoneOffset();
@@ -106,7 +104,6 @@ export default function DosingPage() {
         setChemical("");
         setAmount("");
         setNotes("");
-        // Reset timestamp to now
         const now = new Date();
         const offset = now.getTimezoneOffset();
         const local = new Date(now.getTime() - offset * 60000);
@@ -124,19 +121,24 @@ export default function DosingPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 animate-fade-up">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Dosierung</h1>
-        <p className="text-base text-muted-foreground">
+        <h1 className="font-heading text-4xl font-semibold tracking-tight sm:text-5xl">
+          Dosierung
+        </h1>
+        <p className="mt-1 text-base text-muted-foreground">
           Chemikalien-Dosierung erfassen und verfolgen
         </p>
       </div>
 
       {/* Entry Form */}
-      <Card>
+      <Card className="card-glow relative overflow-hidden">
+        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-violet-500 to-transparent" />
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Plus className="h-4 w-4" />
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/10">
+              <Plus className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
+            </div>
             Neue Dosierung erfassen
           </CardTitle>
         </CardHeader>
@@ -225,17 +227,23 @@ export default function DosingPage() {
       </div>
 
       {/* History Table */}
-      <Card>
+      <Card className="card-glow">
         <CardHeader>
           <CardTitle className="text-base">
-            Dosierungshistorie ({logs.length} Einträge)
+            Dosierungshistorie
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              {logs.length} Einträge
+            </span>
           </CardTitle>
         </CardHeader>
         <CardContent>
           {logs.length === 0 ? (
-            <p className="py-8 text-center text-muted-foreground">
-              Noch keine Dosierungen erfasst.
-            </p>
+            <div className="py-12 text-center">
+              <FlaskConical className="mx-auto mb-3 h-8 w-8 text-muted-foreground/30" />
+              <p className="text-sm text-muted-foreground">
+                Noch keine Dosierungen erfasst.
+              </p>
+            </div>
           ) : (
             <Table>
               <TableHeader>
@@ -250,15 +258,15 @@ export default function DosingPage() {
               <TableBody>
                 {logs.map((entry) => (
                   <TableRow key={entry.id}>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="text-muted-foreground tabular-nums text-sm">
                       {formatTimestamp(entry.timestamp)}
                     </TableCell>
                     <TableCell className="font-medium">{entry.chemical}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right tabular-nums">
                       {String(entry.amountMl).replace(".", ",")}{" "}
                       {CHEMICAL_UNITS[entry.chemical] || "ml"}
                     </TableCell>
-                    <TableCell className="max-w-[200px] truncate text-muted-foreground">
+                    <TableCell className="max-w-[200px] truncate text-muted-foreground text-sm">
                       {entry.notes || "—"}
                     </TableCell>
                     <TableCell>
@@ -266,8 +274,9 @@ export default function DosingPage() {
                         variant="ghost"
                         size="icon-sm"
                         onClick={() => handleDelete(entry.id)}
+                        className="text-muted-foreground hover:text-destructive"
                       >
-                        <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                        <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </TableCell>
                   </TableRow>

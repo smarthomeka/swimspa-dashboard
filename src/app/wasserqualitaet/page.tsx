@@ -4,8 +4,6 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  LineChart,
-  Line,
   Area,
   AreaChart,
   XAxis,
@@ -51,7 +49,7 @@ const METRICS = [
     label: "pH-Wert",
     source: "labcom",
     metric: "ph",
-    color: "#3b82f6",
+    color: "#0d9488",
     safeRange: { y1: 7.2, y2: 7.6, label: "Idealbereich" },
     domain: [6.5, 8.0] as [number, number],
   },
@@ -97,12 +95,13 @@ function CustomTooltip({ active, payload, label, metricLabel, color }: any) {
   if (!active || !payload?.length) return null;
   const val = payload[0].value;
   return (
-    <div className="rounded-xl border border-border/50 bg-card px-3 py-2 shadow-lg">
-      <p className="text-xs text-muted-foreground">
+    <div className="rounded-xl border border-border/50 bg-card px-4 py-2.5 shadow-xl card-glow">
+      <p className="text-[11px] font-medium text-muted-foreground">
         {new Date(label).toLocaleString("de-DE")}
       </p>
-      <p className="mt-0.5 text-sm font-semibold" style={{ color }}>
-        {Number(val).toFixed(2).replace(".", ",")} — {metricLabel}
+      <p className="mt-0.5 text-sm font-bold tabular-nums" style={{ color }}>
+        {Number(val).toFixed(2).replace(".", ",")}
+        <span className="ml-1.5 text-xs font-medium text-muted-foreground">{metricLabel}</span>
       </p>
     </div>
   );
@@ -156,11 +155,16 @@ export default function WaterQualityPage() {
     });
   }
 
+  const gridStroke = "oklch(0.88 0.005 185)";
+  const tickFill = "oklch(0.48 0.02 185)";
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 animate-fade-up">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Wasserqualität</h1>
-        <p className="text-base text-muted-foreground">
+        <h1 className="font-heading text-4xl font-semibold tracking-tight sm:text-5xl">
+          Wasserqualität
+        </h1>
+        <p className="mt-1 text-base text-muted-foreground">
           Detaillierte Messwerte und Trends
         </p>
       </div>
@@ -178,9 +182,15 @@ export default function WaterQualityPage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         {METRICS.map((m) => (
-          <Card key={m.key}>
+          <Card key={m.key} className="card-glow">
             <CardHeader>
-              <CardTitle className="text-base">{m.label}</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: m.color }}
+                />
+                {m.label}
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-48 sm:h-64 lg:h-72">
@@ -188,27 +198,32 @@ export default function WaterQualityPage() {
                   <AreaChart data={data[m.key] ?? []}>
                     <defs>
                       <linearGradient id={`grad-${m.key}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={m.color} stopOpacity={0.15} />
-                        <stop offset="100%" stopColor={m.color} stopOpacity={0.02} />
+                        <stop offset="0%" stopColor={m.color} stopOpacity={0.2} />
+                        <stop offset="100%" stopColor={m.color} stopOpacity={0.01} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid
                       horizontal={true}
                       vertical={false}
-                      stroke="oklch(0.9 0 0)"
+                      stroke={gridStroke}
                       strokeDasharray=""
                     />
                     <XAxis
                       dataKey="timestamp"
                       tickFormatter={formatDateLabel}
-                      fontSize={12}
+                      fontSize={11}
                       interval="preserveStartEnd"
-                      tick={{ fill: "oklch(0.5 0 0)" }}
+                      tick={{ fill: tickFill }}
+                      axisLine={false}
+                      tickLine={false}
                     />
                     <YAxis
                       domain={m.domain}
-                      fontSize={12}
-                      tick={{ fill: "oklch(0.5 0 0)" }}
+                      fontSize={11}
+                      tick={{ fill: tickFill }}
+                      axisLine={false}
+                      tickLine={false}
+                      width={40}
                     />
                     <Tooltip
                       content={
@@ -220,11 +235,11 @@ export default function WaterQualityPage() {
                         y1={m.safeRange.y1}
                         y2={m.safeRange.y2}
                         fill="#10b981"
-                        fillOpacity={0.07}
+                        fillOpacity={0.06}
                         label={{
                           value: m.safeRange.label,
                           position: "insideTopRight",
-                          fontSize: 11,
+                          fontSize: 10,
                           fill: "#10b981",
                         }}
                       />
@@ -234,7 +249,7 @@ export default function WaterQualityPage() {
                         y={m.minLine.y}
                         stroke="#f59e0b"
                         strokeDasharray="5 5"
-                        label={{ value: m.minLine.label, fontSize: 11, fill: "#f59e0b" }}
+                        label={{ value: m.minLine.label, fontSize: 10, fill: "#f59e0b" }}
                       />
                     )}
                     {getDosingMarkers(m.key).map((marker, i) => (
@@ -247,7 +262,7 @@ export default function WaterQualityPage() {
                         label={{
                           value: "Dosierung",
                           position: "insideTopRight",
-                          fontSize: 10,
+                          fontSize: 9,
                           fill: "#d946ef",
                         }}
                       />
@@ -256,11 +271,11 @@ export default function WaterQualityPage() {
                       type="monotone"
                       dataKey="value"
                       stroke={m.color}
-                      strokeWidth={2.5}
+                      strokeWidth={2}
                       fill={`url(#grad-${m.key})`}
                       dot={false}
                       activeDot={{
-                        r: 5,
+                        r: 4,
                         stroke: "white",
                         strokeWidth: 2,
                         fill: m.color,

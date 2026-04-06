@@ -8,8 +8,8 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-heading: var(--font-heading);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -39,6 +39,10 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-gold: var(--gold);
+  --color-gold-foreground: var(--gold-foreground);
+  --color-teal: var(--teal);
+  --color-teal-foreground: var(--teal-foreground);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -48,73 +52,83 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* ─── Light: Warm spa whites with teal water tones ─── */
 :root {
-  --background: oklch(0.97 0.005 250);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.65 0.15 195);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.96 0.01 250);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.96 0.005 250);
-  --muted-foreground: oklch(0.50 0.02 250);
-  --accent: oklch(0.96 0.01 250);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.65 0.2 25);
-  --border: oklch(0.90 0.01 250);
-  --input: oklch(0.90 0.01 250);
-  --ring: oklch(0.65 0.15 195);
-  --chart-1: oklch(0.65 0.15 195);
-  --chart-2: oklch(0.75 0.12 60);
-  --chart-3: oklch(0.72 0.17 155);
-  --chart-4: oklch(0.60 0.18 280);
-  --chart-5: oklch(0.65 0.2 25);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0.005 250);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.65 0.15 195);
-  --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.96 0.01 250);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.90 0.01 250);
-  --sidebar-ring: oklch(0.65 0.15 195);
+  --background: oklch(0.965 0.008 175);
+  --foreground: oklch(0.16 0.02 185);
+  --card: oklch(0.995 0.003 175);
+  --card-foreground: oklch(0.16 0.02 185);
+  --popover: oklch(0.995 0.003 175);
+  --popover-foreground: oklch(0.16 0.02 185);
+  --primary: oklch(0.48 0.11 185);
+  --primary-foreground: oklch(0.99 0.005 175);
+  --secondary: oklch(0.94 0.012 175);
+  --secondary-foreground: oklch(0.22 0.02 185);
+  --muted: oklch(0.94 0.008 175);
+  --muted-foreground: oklch(0.48 0.025 185);
+  --accent: oklch(0.94 0.012 175);
+  --accent-foreground: oklch(0.22 0.02 185);
+  --destructive: oklch(0.60 0.2 25);
+  --border: oklch(0.90 0.012 175);
+  --input: oklch(0.90 0.012 175);
+  --ring: oklch(0.48 0.11 185);
+  --gold: oklch(0.72 0.14 75);
+  --gold-foreground: oklch(0.25 0.04 75);
+  --teal: oklch(0.48 0.11 185);
+  --teal-foreground: oklch(0.99 0.005 175);
+  --chart-1: oklch(0.48 0.11 185);
+  --chart-2: oklch(0.72 0.14 75);
+  --chart-3: oklch(0.60 0.15 155);
+  --chart-4: oklch(0.55 0.16 280);
+  --chart-5: oklch(0.60 0.2 25);
+  --radius: 0.75rem;
+  --sidebar: oklch(0.975 0.008 175);
+  --sidebar-foreground: oklch(0.16 0.02 185);
+  --sidebar-primary: oklch(0.48 0.11 185);
+  --sidebar-primary-foreground: oklch(0.99 0.005 175);
+  --sidebar-accent: oklch(0.94 0.012 175);
+  --sidebar-accent-foreground: oklch(0.22 0.02 185);
+  --sidebar-border: oklch(0.90 0.012 175);
+  --sidebar-ring: oklch(0.48 0.11 185);
 }
 
+/* ─── Dark: Deep charcoal with teal undertones ─── */
 .dark {
-  --background: oklch(0.13 0.01 250);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.18 0.01 250);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.18 0.01 250);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.75 0.14 195);
-  --primary-foreground: oklch(0.13 0.01 250);
-  --secondary: oklch(0.24 0.01 250);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.24 0.01 250);
-  --muted-foreground: oklch(0.70 0.02 250);
-  --accent: oklch(0.24 0.01 250);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.75 0.14 195);
-  --chart-1: oklch(0.75 0.14 195);
-  --chart-2: oklch(0.80 0.12 60);
-  --chart-3: oklch(0.78 0.17 155);
-  --chart-4: oklch(0.68 0.18 280);
-  --chart-5: oklch(0.70 0.2 25);
-  --sidebar: oklch(0.18 0.01 250);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.75 0.14 195);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.24 0.01 250);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.75 0.14 195);
+  --background: oklch(0.14 0.015 185);
+  --foreground: oklch(0.94 0.008 175);
+  --card: oklch(0.19 0.018 185);
+  --card-foreground: oklch(0.94 0.008 175);
+  --popover: oklch(0.19 0.018 185);
+  --popover-foreground: oklch(0.94 0.008 175);
+  --primary: oklch(0.68 0.12 185);
+  --primary-foreground: oklch(0.12 0.015 185);
+  --secondary: oklch(0.24 0.02 185);
+  --secondary-foreground: oklch(0.94 0.008 175);
+  --muted: oklch(0.24 0.015 185);
+  --muted-foreground: oklch(0.62 0.025 185);
+  --accent: oklch(0.24 0.02 185);
+  --accent-foreground: oklch(0.94 0.008 175);
+  --destructive: oklch(0.65 0.2 25);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.68 0.12 185);
+  --gold: oklch(0.78 0.13 75);
+  --gold-foreground: oklch(0.15 0.03 75);
+  --teal: oklch(0.68 0.12 185);
+  --teal-foreground: oklch(0.12 0.015 185);
+  --chart-1: oklch(0.68 0.12 185);
+  --chart-2: oklch(0.78 0.13 75);
+  --chart-3: oklch(0.68 0.15 155);
+  --chart-4: oklch(0.62 0.16 280);
+  --chart-5: oklch(0.65 0.2 25);
+  --sidebar: oklch(0.19 0.018 185);
+  --sidebar-foreground: oklch(0.94 0.008 175);
+  --sidebar-primary: oklch(0.68 0.12 185);
+  --sidebar-primary-foreground: oklch(0.94 0.008 175);
+  --sidebar-accent: oklch(0.24 0.02 185);
+  --sidebar-accent-foreground: oklch(0.94 0.008 175);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.68 0.12 185);
 }
 
 @layer base {
@@ -122,9 +136,82 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
   }
   html {
-    @apply font-sans;
+    @apply font-sans scroll-smooth;
   }
+  h1, h2, h3 {
+    font-family: var(--font-heading);
+  }
+}
+
+/* ─── Spa luxury utilities ─── */
+@layer utilities {
+  .font-heading {
+    font-family: var(--font-heading);
+  }
+
+  .text-gradient-teal {
+    background: linear-gradient(135deg, oklch(0.48 0.11 185), oklch(0.55 0.13 170));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .dark .text-gradient-teal {
+    background: linear-gradient(135deg, oklch(0.68 0.12 185), oklch(0.75 0.13 170));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .glass {
+    background: oklch(1 0 0 / 60%);
+    backdrop-filter: blur(20px) saturate(1.4);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  }
+
+  .dark .glass {
+    background: oklch(0.19 0.018 185 / 60%);
+  }
+
+  .card-glow {
+    box-shadow:
+      0 1px 2px oklch(0 0 0 / 4%),
+      0 4px 16px oklch(0 0 0 / 3%),
+      inset 0 1px 0 oklch(1 0 0 / 50%);
+  }
+
+  .dark .card-glow {
+    box-shadow:
+      0 1px 2px oklch(0 0 0 / 20%),
+      0 4px 16px oklch(0 0 0 / 15%),
+      inset 0 1px 0 oklch(1 0 0 / 5%);
+  }
+}
+
+/* ─── Smooth page transitions ─── */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.5s ease-out both;
+}
+
+@keyframes subtle-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.animate-subtle-pulse {
+  animation: subtle-pulse 2s ease-in-out infinite;
 }

@@ -1,7 +1,6 @@
 "use client";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -16,21 +15,26 @@ interface StatusCardProps {
   accentColor?: string;
 }
 
-const statusColors = {
-  ok: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400",
-  warn: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
-  critical: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
-};
-
-const statusLabels = {
-  ok: "OK",
-  warn: "Achtung",
-  critical: "Kritisch",
+const statusConfig = {
+  ok: {
+    badge: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 ring-1 ring-emerald-500/20",
+    label: "OK",
+    dot: "bg-emerald-500",
+  },
+  warn: {
+    badge: "bg-amber-500/10 text-amber-700 dark:text-amber-400 ring-1 ring-amber-500/20",
+    label: "Achtung",
+    dot: "bg-amber-500",
+  },
+  critical: {
+    badge: "bg-red-500/10 text-red-700 dark:text-red-400 ring-1 ring-red-500/20",
+    label: "Kritisch",
+    dot: "bg-red-500",
+  },
 };
 
 function freshnessClass(subtitle?: string): string {
   if (!subtitle) return "text-muted-foreground";
-  // Check for "vor X Min." pattern — green if recent
   const minMatch = subtitle.match(/vor (\d+) Min/);
   if (minMatch) {
     const mins = parseInt(minMatch[1]);
@@ -56,40 +60,58 @@ export function StatusCard({
 }: StatusCardProps) {
   if (variant === "hero") {
     return (
-      <Card className="relative overflow-hidden">
+      <Card className="relative overflow-hidden card-glow group">
+        {/* Gradient wash */}
         {accentColor && (
           <div
-            className="pointer-events-none absolute inset-0 opacity-[0.06]"
+            className="pointer-events-none absolute inset-0 opacity-[0.05] transition-opacity duration-500 group-hover:opacity-[0.08]"
             style={{
-              background: `linear-gradient(135deg, ${accentColor} 0%, transparent 60%)`,
+              background: `radial-gradient(ellipse at top left, ${accentColor} 0%, transparent 70%)`,
             }}
           />
         )}
-        <CardHeader className="flex flex-row items-center justify-between pb-1">
-          <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            {title}
-          </CardTitle>
-          <Icon className="h-5 w-5 text-primary" />
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-baseline gap-2">
-            <span className="text-5xl font-extrabold tabular-nums tracking-tight">{value}</span>
+        {/* Accent line */}
+        {accentColor && (
+          <div
+            className="absolute top-0 left-0 right-0 h-[2px]"
+            style={{ background: `linear-gradient(90deg, ${accentColor}, transparent)` }}
+          />
+        )}
+        <CardContent className="relative pt-5 pb-5">
+          <div className="flex items-start justify-between mb-3">
+            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              {title}
+            </span>
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-lg"
+              style={{ backgroundColor: accentColor ? `${accentColor}15` : undefined }}
+            >
+              <Icon
+                className="h-4.5 w-4.5"
+                style={{ color: accentColor || "var(--color-primary)" }}
+              />
+            </div>
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-heading text-5xl font-bold tabular-nums tracking-tight">
+              {value}
+            </span>
             {unit && (
-              <span className="text-lg text-muted-foreground">{unit}</span>
+              <span className="text-lg font-medium text-muted-foreground">{unit}</span>
             )}
           </div>
-          <div className="mt-2 flex items-center gap-2">
+          <div className="mt-3 flex items-center gap-2.5">
             {status && (
-              <Badge variant="secondary" className={statusColors[status]}>
+              <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold", statusConfig[status].badge)}>
                 {status === "critical" && (
-                  <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
+                  <span className={cn("h-1.5 w-1.5 rounded-full animate-pulse", statusConfig[status].dot)} />
                 )}
-                {statusLabels[status]}
-              </Badge>
+                {statusConfig[status].label}
+              </span>
             )}
             {subtitle && (
-              <span className={cn("flex items-center gap-1.5 text-xs", freshnessClass(subtitle))}>
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className={cn("flex items-center gap-1.5 text-xs font-medium", freshnessClass(subtitle))}>
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-subtle-pulse" />
                 {subtitle}
               </span>
             )}
@@ -101,29 +123,29 @@ export function StatusCard({
 
   if (variant === "compact") {
     return (
-      <Card size="sm">
-        <CardHeader className="flex flex-row items-center justify-between pb-1">
-          <CardTitle className="text-xs font-medium text-muted-foreground">
-            {title}
-          </CardTitle>
-          <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-        </CardHeader>
-        <CardContent>
+      <Card size="sm" className="card-glow">
+        <CardContent className="pt-3 pb-3">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+              {title}
+            </span>
+            <Icon className="h-3.5 w-3.5 text-muted-foreground/70" />
+          </div>
           <div className="flex items-baseline gap-1">
-            <span className="text-xl font-bold tabular-nums">{value}</span>
+            <span className="font-heading text-2xl font-bold tabular-nums">{value}</span>
             {unit && (
-              <span className="text-sm text-muted-foreground">{unit}</span>
+              <span className="text-sm font-medium text-muted-foreground">{unit}</span>
             )}
           </div>
           {(status || subtitle) && (
-            <div className="mt-1 flex items-center gap-2">
+            <div className="mt-1.5 flex items-center gap-2">
               {status && (
-                <Badge variant="secondary" className={cn("text-[10px]", statusColors[status])}>
-                  {statusLabels[status]}
-                </Badge>
+                <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-px text-[10px] font-semibold", statusConfig[status].badge)}>
+                  {statusConfig[status].label}
+                </span>
               )}
               {subtitle && (
-                <span className="text-[10px] text-muted-foreground">{subtitle}</span>
+                <span className="text-[10px] font-medium text-muted-foreground">{subtitle}</span>
               )}
             </div>
           )}
@@ -132,39 +154,36 @@ export function StatusCard({
     );
   }
 
-  // Standard variant
+  // Standard variant — with accent left border
   return (
     <Card
-      className={cn(
-        "relative",
-        accentColor && "border-l-4"
-      )}
+      className={cn("relative card-glow", accentColor && "border-l-[3px]")}
       style={accentColor ? { borderLeftColor: accentColor } : undefined}
     >
-      <CardHeader className="flex flex-row items-center justify-between pb-1">
-        <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          {title}
-        </CardTitle>
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </CardHeader>
-      <CardContent>
+      <CardContent className="pt-5 pb-5">
+        <div className="flex items-start justify-between mb-2">
+          <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            {title}
+          </span>
+          <Icon className="h-4 w-4 text-muted-foreground/60" />
+        </div>
         <div className="flex items-baseline gap-1.5">
-          <span className="text-3xl font-extrabold tabular-nums">{value}</span>
+          <span className="font-heading text-3xl font-bold tabular-nums">{value}</span>
           {unit && (
-            <span className="text-base text-muted-foreground">{unit}</span>
+            <span className="text-base font-medium text-muted-foreground">{unit}</span>
           )}
         </div>
-        <div className="mt-1.5 flex items-center gap-2">
+        <div className="mt-2 flex items-center gap-2">
           {status && (
-            <Badge variant="secondary" className={statusColors[status]}>
+            <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold", statusConfig[status].badge)}>
               {status === "critical" && (
-                <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
+                <span className={cn("h-1.5 w-1.5 rounded-full animate-pulse", statusConfig[status].dot)} />
               )}
-              {statusLabels[status]}
-            </Badge>
+              {statusConfig[status].label}
+            </span>
           )}
           {subtitle && (
-            <span className={cn("text-xs", freshnessClass(subtitle))}>
+            <span className={cn("text-xs font-medium", freshnessClass(subtitle))}>
               {subtitle}
             </span>
           )}

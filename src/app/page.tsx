@@ -47,43 +47,46 @@ export default function OverviewPage() {
 
   if (!data) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <p className="text-sm text-muted-foreground">Lade Daten...</p>
+      <div className="flex items-center justify-center py-32">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+          <p className="text-sm font-medium text-muted-foreground">Lade Daten...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 animate-fade-up">
+      {/* Page header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Übersicht</h1>
-        <p className="text-base text-muted-foreground">
-          Armstark Lotus 460 SwimSpa &mdash; Aktuelle Werte
+        <h1 className="font-heading text-4xl font-semibold tracking-tight sm:text-5xl">
+          Übersicht
+        </h1>
+        <p className="mt-1 text-base text-muted-foreground">
+          Armstark Lotus 460 SwimSpa — Aktuelle Werte
         </p>
       </div>
 
       {data.demoMode && (
         <Link
           href="/einstellungen"
-          className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 transition-colors hover:bg-amber-500/10"
+          className="flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 transition-all duration-200 hover:bg-amber-500/10 hover:border-amber-500/30"
         >
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
           <div>
-            <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+            <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">
               Demo-Modus
             </p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground mt-0.5">
               Es werden simulierte Testdaten angezeigt. Klicke hier um deine APIs zu konfigurieren.
             </p>
           </div>
         </Link>
       )}
 
-      {/* Tier 1: Hero metrics — Temperature + pH */}
-      <div className="grid gap-4 sm:grid-cols-2">
+      {/* Tier 1: Hero metrics */}
+      <div className="grid gap-5 sm:grid-cols-2">
         <StatusCard
           title="Wassertemperatur"
           value={data.temperature ? formatNumber(data.temperature.value) : "–"}
@@ -101,12 +104,12 @@ export default function OverviewPage() {
           status={data.ph ? phStatus(data.ph.value) : undefined}
           subtitle={data.ph ? relativeTime(data.ph.timestamp) : undefined}
           variant="hero"
-          accentColor="#3b82f6"
+          accentColor="#0d9488"
         />
       </div>
 
-      {/* Tier 2: Secondary metrics with colored accent borders */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      {/* Tier 2: Secondary metrics */}
+      <div className="grid gap-5 sm:grid-cols-3">
         <StatusCard
           title="Brom"
           value={data.bromine ? formatNumber(data.bromine.value) : "–"}
@@ -130,12 +133,12 @@ export default function OverviewPage() {
           unit="W"
           icon={Zap}
           subtitle={data.powerW ? relativeTime(data.powerW.timestamp) : undefined}
-          accentColor="#f59e0b"
+          accentColor="#ca8a04"
         />
       </div>
 
-      {/* Tier 3: Informational — compact */}
-      <div className="grid gap-4 sm:grid-cols-2">
+      {/* Tier 3: Informational */}
+      <div className="grid gap-5 sm:grid-cols-2">
         <StatusCard
           title="Gesamtverbrauch"
           value={data.energyKwh ? formatNumber(data.energyKwh.value, 0) : "–"}
