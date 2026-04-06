@@ -1,18 +1,29 @@
 import { db } from "./index";
-import { sensorReadings } from "./schema";
+import { sensorReadings, dosingLog, aiRecommendations, dosingResponses } from "./schema";
 import { sql } from "drizzle-orm";
 
 function randomBetween(min: number, max: number, decimals = 1): number {
   return parseFloat((Math.random() * (max - min) + min).toFixed(decimals));
 }
 
-export function seedMockData() {
+export function clearAllData() {
+  db.delete(dosingResponses).run();
+  db.delete(aiRecommendations).run();
+  db.delete(dosingLog).run();
+  db.delete(sensorReadings).run();
+}
+
+export function seedMockData(force = false) {
   // Check if we already have data
   const count = db
     .select({ count: sql<number>`count(*)` })
     .from(sensorReadings)
     .get();
-  if (count && count.count > 0) return;
+  if (!force && count && count.count > 0) return;
+
+  if (force) {
+    clearAllData();
+  }
 
   const now = new Date();
   const readings: Array<{
@@ -118,5 +129,43 @@ export function seedMockData() {
     db.insert(sensorReadings).values(readings.slice(i, i + batchSize)).run();
   }
 
-  console.log(`Seeded ${readings.length} sensor readings`);
+  // Seed dosing logs — realistic entries every few days
+  const chemicals = [
+    { name: "Brom-Tabletten", amounts: [20, 40, 60] },
+    { name: "pH-Minus", amounts: [15, 30, 50] },
+    { name: "pH-Plus", amounts: [15, 30, 50] },
+    { name: "Algizid", amounts: [25, 50] },
+    { name: "Klareffekt", amounts: [30, 50] },
+  ];
+  const dosingEntries: Array<{
+    chemical: string;
+    amountMl: number;
+    notes: string | null;
+    timestamp: string;
+  }> = [];
+
+  for (let daysAgo = 85; daysAgo >= 0; daysAgo -= Math.floor(randomBetween(2, 5, 0))) {
+    const ts = new Date(now);
+    ts.setDate(ts.getDate() - daysAgo);
+    ts.setHours(Math.floor(randomBetween(9, 18, 0)), Math.floor(randomBetween(0, 59, 0)), 0, 0);
+
+    const chem = chemicals[Math.floor(Math.random() * chemicals.length)];
+    const amount = chem.amounts[Math.floor(Math.random() * chem.amounts.length)];
+    const notes = Math.random() > 0.6
+      ? ["Nach Messung dosiert", "Wöchentliche Pflege", "Wasser trüb", "Routine-Dosierung", "Nach Badenutzung"][Math.floor(Math.random() * 5)]
+      : null;
+
+    dosingEntries.push({
+      chemical: chem.name,
+      amountMl: amount,
+      notes,
+      timestamp: ts.toISOString(),
+    });
+  }
+
+  for (let i = 0; i < dosingEntries.length; i += batchSize) {
+    db.insert(dosingLog).values(dosingEntries.slice(i, i + batchSize)).run();
+  }
+
+  console.log(`Seeded ${readings.length} sensor readings, ${dosingEntries.length} dosing logs`);
 }

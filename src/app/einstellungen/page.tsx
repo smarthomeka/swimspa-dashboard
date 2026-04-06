@@ -13,6 +13,11 @@ import {
   Loader2,
   Eye,
   EyeOff,
+  DatabaseZap,
+  Trash2,
+  AlertTriangle,
+  HardDrive,
+  Info,
 } from "lucide-react";
 
 type ProviderMeta = {
@@ -74,6 +79,17 @@ type SettingsData = Record<
   string,
   { enabled: boolean; config: Record<string, string> }
 >;
+
+type SystemInfo = {
+  version: string;
+  dbSizeBytes: number;
+  counts: {
+    readings: number;
+    dosingLogs: number;
+    recommendations: number;
+    dosingResponses: number;
+  };
+};
 
 function ProviderCard({
   meta,
@@ -188,19 +204,39 @@ function ProviderCard({
   );
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
+}
+
 export default function EinstellungenPage() {
   const [settings, setSettings] = useState<SettingsData>({});
   const [loading, setLoading] = useState(true);
   const [savingProvider, setSavingProvider] = useState<string | null>(null);
   const [savedProvider, setSavedProvider] = useState<string | null>(null);
+  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+  const [seedingData, setSeedingData] = useState(false);
+  const [clearingData, setClearingData] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [seedSuccess, setSeedSuccess] = useState<string | null>(null);
+
+  const loadSystemInfo = useCallback(() => {
+    fetch("/api/system")
+      .then((r) => r.json())
+      .then(setSystemInfo);
+  }, []);
 
   useEffect(() => {
-    fetch("/api/settings")
-      .then((r) => r.json())
-      .then((data) => {
-        setSettings(data);
-        setLoading(false);
-      });
+    Promise.all([
+      fetch("/api/settings").then((r) => r.json()),
+      fetch("/api/system").then((r) => r.json()),
+    ]).then(([settingsData, sysData]) => {
+      setSettings(settingsData);
+      setSystemInfo(sysData);
+      setLoading(false);
+    });
   }, []);
 
   const handleChange = useCallback(
@@ -235,7 +271,31 @@ export default function EinstellungenPage() {
     [settings]
   );
 
+  const handleSeedData = useCallback(async () => {
+    setSeedingData(true);
+    setSeedSuccess(null);
+    await fetch("/api/seed", { method: "POST" });
+    setSeedingData(false);
+    setSeedSuccess("loaded");
+    loadSystemInfo();
+    setTimeout(() => setSeedSuccess(null), 3000);
+  }, [loadSystemInfo]);
+
+  const handleClearData = useCallback(async () => {
+    setClearingData(true);
+    setSeedSuccess(null);
+    await fetch("/api/seed", { method: "DELETE" });
+    setClearingData(false);
+    setShowClearConfirm(false);
+    setSeedSuccess("cleared");
+    loadSystemInfo();
+    setTimeout(() => setSeedSuccess(null), 3000);
+  }, [loadSystemInfo]);
+
   const configuredCount = Object.values(settings).filter((s) => s.enabled).length;
+  const totalRecords = systemInfo
+    ? systemInfo.counts.readings + systemInfo.counts.dosingLogs + systemInfo.counts.recommendations + systemInfo.counts.dosingResponses
+    : 0;
 
   if (loading) {
     return (
@@ -249,44 +309,169 @@ export default function EinstellungenPage() {
   }
 
   return (
-    <div className="space-y-8 animate-fade-up">
+    <div className="space-y-10 animate-fade-up">
       <div>
         <h1 className="font-heading text-4xl font-semibold tracking-tight sm:text-5xl">
           Einstellungen
         </h1>
         <p className="mt-1 text-base text-muted-foreground">
-          API-Verbindungen konfigurieren.{" "}
-          {configuredCount === 0
-            ? "Aktuell werden Demo-Daten angezeigt."
-            : `${configuredCount} von ${PROVIDERS.length} APIs aktiv.`}
+          Testdaten, API-Verbindungen und Systeminformationen verwalten.
         </p>
       </div>
 
-      {configuredCount === 0 && (
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
-          <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">
-            Demo-Modus aktiv
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Keine APIs konfiguriert — das Dashboard zeigt simulierte Testdaten an.
-            Aktiviere eine oder mehrere APIs um Live-Daten zu sehen.
-          </p>
+      {/* ── Section: Testdaten ── */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <DatabaseZap className="h-5 w-5 text-primary" />
+          <h2 className="font-heading text-xl font-semibold">Testdaten</h2>
         </div>
-      )}
+        <p className="text-sm text-muted-foreground">
+          Lade realistische Demo-Daten (90 Tage Sensormesswerte, Dosierungsprotokolle) oder lösche alle gespeicherten Daten.
+        </p>
 
-      <div className="grid gap-5">
-        {PROVIDERS.map((meta) => (
-          <ProviderCard
-            key={meta.key}
-            meta={meta}
-            data={settings[meta.key] ?? { enabled: false, config: {} }}
-            onChange={handleChange}
-            onSave={handleSave}
-            saving={savingProvider === meta.key}
-            saved={savedProvider === meta.key}
-          />
-        ))}
-      </div>
+        {seedSuccess && (
+          <div className={`rounded-xl border p-3 ${
+            seedSuccess === "loaded"
+              ? "border-emerald-500/20 bg-emerald-500/5"
+              : "border-amber-500/20 bg-amber-500/5"
+          }`}>
+            <p className={`text-sm font-semibold ${
+              seedSuccess === "loaded"
+                ? "text-emerald-700 dark:text-emerald-400"
+                : "text-amber-700 dark:text-amber-400"
+            }`}>
+              {seedSuccess === "loaded"
+                ? "Testdaten wurden erfolgreich geladen."
+                : "Alle Daten wurden gelöscht."}
+            </p>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-3">
+          <Button
+            onClick={handleSeedData}
+            disabled={seedingData || clearingData}
+          >
+            {seedingData ? (
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            ) : (
+              <DatabaseZap className="mr-1.5 h-4 w-4" />
+            )}
+            {seedingData ? "Lade Testdaten..." : "Testdaten laden"}
+          </Button>
+
+          {!showClearConfirm ? (
+            <Button
+              variant="outline"
+              onClick={() => setShowClearConfirm(true)}
+              disabled={seedingData || clearingData || totalRecords === 0}
+            >
+              <Trash2 className="mr-1.5 h-4 w-4" />
+              Alle Daten löschen
+            </Button>
+          ) : (
+            <div className="flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-2">
+              <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
+              <span className="text-sm font-medium text-destructive">Wirklich alle Daten löschen?</span>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleClearData}
+                disabled={clearingData}
+              >
+                {clearingData ? (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                ) : null}
+                Ja, löschen
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowClearConfirm(false)}
+                disabled={clearingData}
+              >
+                Abbrechen
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {systemInfo && (
+          <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+            <span>{systemInfo.counts.readings.toLocaleString("de-DE")} Messwerte</span>
+            <span>{systemInfo.counts.dosingLogs.toLocaleString("de-DE")} Dosierungen</span>
+            <span>{systemInfo.counts.recommendations.toLocaleString("de-DE")} KI-Empfehlungen</span>
+          </div>
+        )}
+      </section>
+
+      {/* ── Section: API-Verbindungen ── */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Radio className="h-5 w-5 text-primary" />
+          <h2 className="font-heading text-xl font-semibold">API-Verbindungen</h2>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          {configuredCount === 0
+            ? "Keine APIs konfiguriert — das Dashboard zeigt Demo-Daten an."
+            : `${configuredCount} von ${PROVIDERS.length} APIs aktiv.`}
+        </p>
+
+        {configuredCount === 0 && (
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+            <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">
+              Demo-Modus aktiv
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Aktiviere eine oder mehrere APIs um Live-Daten zu sehen.
+            </p>
+          </div>
+        )}
+
+        <div className="grid gap-5">
+          {PROVIDERS.map((meta) => (
+            <ProviderCard
+              key={meta.key}
+              meta={meta}
+              data={settings[meta.key] ?? { enabled: false, config: {} }}
+              onChange={handleChange}
+              onSave={handleSave}
+              saving={savingProvider === meta.key}
+              saved={savedProvider === meta.key}
+            />
+          ))}
+        </div>
+      </section>
+
+      {/* ── Section: System ── */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Info className="h-5 w-5 text-primary" />
+          <h2 className="font-heading text-xl font-semibold">System</h2>
+        </div>
+
+        <Card className="card-glow">
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">App-Version</p>
+                <p className="text-lg font-semibold font-heading">{systemInfo?.version ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Datenbankgröße</p>
+                <div className="flex items-center gap-2">
+                  <HardDrive className="h-4 w-4 text-muted-foreground" />
+                  <p className="text-lg font-semibold font-heading">{systemInfo ? formatBytes(systemInfo.dbSizeBytes) : "—"}</p>
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Datensätze gesamt</p>
+                <p className="text-lg font-semibold font-heading">{totalRecords.toLocaleString("de-DE")}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
     </div>
   );
 }
