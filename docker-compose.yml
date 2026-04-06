@@ -1,6 +1,7 @@
 services:
   dashboard:
-    build: .
+    image: ghcr.io/smarthomeka/swimspa-dashboard:latest
+    pull_policy: always
     container_name: swimspa-dashboard
     restart: unless-stopped
     ports:
