@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Waves, Droplets, Zap, LayoutDashboard, Sun, Moon } from "lucide-react";
+import { Waves, Droplets, Zap, LayoutDashboard, Sun, Moon, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const links = [
   { href: "/", label: "Übersicht", shortLabel: "Übersicht", icon: LayoutDashboard },
   { href: "/wasserqualitaet", label: "Wasserqualität", shortLabel: "Wasser", icon: Droplets },
   { href: "/energie", label: "Energie", shortLabel: "Energie", icon: Zap },
+  { href: "/einstellungen", label: "Einstellungen", shortLabel: "Settings", icon: Settings },
 ];
 
 function useTheme() {

@@ -19,5 +19,15 @@ export const dosingLog = sqliteTable("dosing_log", {
 
 export type SensorReading = typeof sensorReadings.$inferSelect;
 export type NewSensorReading = typeof sensorReadings.$inferInsert;
+export const apiSettings = sqliteTable("api_settings", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  provider: text("provider").notNull().unique(), // 'gecko' | 'labcom' | 'shelly' | 'blueconnect'
+  enabled: integer("enabled").notNull().default(0), // 0 = disabled, 1 = enabled
+  config: text("config").notNull().default("{}"), // JSON blob with provider-specific settings
+  updatedAt: text("updated_at").notNull(),
+});
+
 export type DosingLogEntry = typeof dosingLog.$inferSelect;
 export type NewDosingLogEntry = typeof dosingLog.$inferInsert;
+export type ApiSetting = typeof apiSettings.$inferSelect;
+export type NewApiSetting = typeof apiSettings.$inferInsert;

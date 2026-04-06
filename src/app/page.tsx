@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { StatusCard } from "@/components/status-card";
-import { Thermometer, Droplets, FlaskConical, Gauge, Zap, Activity } from "lucide-react";
+import { Thermometer, Droplets, FlaskConical, Gauge, Zap, Activity, Info } from "lucide-react";
+import Link from "next/link";
 import { relativeTime, formatNumber } from "@/lib/format";
 
 function phStatus(v: number): "ok" | "warn" | "critical" {
@@ -32,6 +33,7 @@ interface LatestData {
   orp: { value: number; unit: string; timestamp: string } | null;
   powerW: { value: number; unit: string; timestamp: string } | null;
   energyKwh: { value: number; unit: string; timestamp: string } | null;
+  demoMode?: boolean;
 }
 
 export default function OverviewPage() {
@@ -62,6 +64,23 @@ export default function OverviewPage() {
           Armstark Lotus 460 SwimSpa &mdash; Aktuelle Werte
         </p>
       </div>
+
+      {data.demoMode && (
+        <Link
+          href="/einstellungen"
+          className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 transition-colors hover:bg-amber-500/10"
+        >
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div>
+            <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+              Demo-Modus
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Es werden simulierte Testdaten angezeigt. Klicke hier um deine APIs zu konfigurieren.
+            </p>
+          </div>
+        </Link>
+      )}
 
       {/* Tier 1: Hero metrics — Temperature + pH */}
       <div className="grid gap-4 sm:grid-cols-2">

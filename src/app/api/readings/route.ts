@@ -1,16 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getLatestValues, getReadings, getDailyEnergyConsumption } from "@/lib/db/queries";
 import { seedMockData } from "@/lib/db/seed";
+import { getAllSettings } from "@/lib/db/settings";
 
-// Ensure mock data exists
+// Ensure mock data exists for demo mode
 seedMockData();
+
+function isDemoMode(): boolean {
+  const settings = getAllSettings();
+  return !Object.values(settings).some((s) => s.enabled);
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const type = searchParams.get("type") ?? "latest";
 
   if (type === "latest") {
-    return NextResponse.json(getLatestValues());
+    return NextResponse.json({ ...getLatestValues(), demoMode: isDemoMode() });
   }
 
   if (type === "history") {

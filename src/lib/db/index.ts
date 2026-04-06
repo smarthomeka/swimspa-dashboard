@@ -31,4 +31,11 @@ sqlite.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_readings_source_metric ON sensor_readings(source, metric);
   CREATE INDEX IF NOT EXISTS idx_readings_timestamp ON sensor_readings(timestamp);
+  CREATE TABLE IF NOT EXISTS api_settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider TEXT NOT NULL UNIQUE,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    config TEXT NOT NULL DEFAULT '{}',
+    updated_at TEXT NOT NULL
+  );
 `);
