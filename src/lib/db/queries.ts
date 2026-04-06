@@ -1,5 +1,6 @@
 import { db } from "./index";
-import { sensorReadings } from "./schema";
+import { sensorReadings, dosingLog } from "./schema";
+import type { NewDosingLogEntry } from "./schema";
 import { desc, eq, and, gte, sql } from "drizzle-orm";
 
 export function getLatestReading(source: string, metric: string) {
@@ -53,6 +54,27 @@ export function getDailyEnergyConsumption(since: Date) {
     .groupBy(sql`date(timestamp)`)
     .orderBy(sql`date(timestamp)`)
     .all();
+}
+
+export function getDosingLogs(since?: Date, chemical?: string) {
+  const conditions = [];
+  if (since) conditions.push(gte(dosingLog.timestamp, since.toISOString()));
+  if (chemical) conditions.push(eq(dosingLog.chemical, chemical));
+
+  return db
+    .select()
+    .from(dosingLog)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(dosingLog.timestamp))
+    .all();
+}
+
+export function insertDosingLog(entry: NewDosingLogEntry) {
+  return db.insert(dosingLog).values(entry).returning().get();
+}
+
+export function deleteDosingLog(id: number) {
+  return db.delete(dosingLog).where(eq(dosingLog.id, id)).run();
 }
 
 export function getLatestValues() {

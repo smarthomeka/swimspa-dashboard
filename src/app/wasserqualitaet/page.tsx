@@ -26,6 +26,20 @@ interface Reading {
   timestamp: string;
 }
 
+interface DosingEvent {
+  id: number;
+  chemical: string;
+  amountMl: number;
+  notes: string | null;
+  timestamp: string;
+}
+
+const DOSING_METRIC_MAP: Record<string, string[]> = {
+  ph: ["Armstark PH+", "Armstark PH-"],
+  bromine: ["tubhub Bromine Granules", "hth Spa Brom Tabs", "hth Spa Schock-Sauerstoff"],
+  alkalinity: ["SpaLine Calcium+"],
+};
+
 function formatDateLabel(iso: string) {
   const d = new Date(iso);
   return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
@@ -97,22 +111,50 @@ function CustomTooltip({ active, payload, label, metricLabel, color }: any) {
 export default function WaterQualityPage() {
   const [days, setDays] = useState<number>(7);
   const [data, setData] = useState<Record<string, Reading[]>>({});
+  const [dosingEvents, setDosingEvents] = useState<DosingEvent[]>([]);
 
   useEffect(() => {
     async function load() {
       const results: Record<string, Reading[]> = {};
-      await Promise.all(
-        METRICS.map(async (m) => {
-          const res = await fetch(
-            `/api/readings?type=history&source=${m.source}&metric=${m.metric}&days=${days}`
-          );
-          results[m.key] = await res.json();
-        })
-      );
+      const [, dosingRes] = await Promise.all([
+        Promise.all(
+          METRICS.map(async (m) => {
+            const res = await fetch(
+              `/api/readings?type=history&source=${m.source}&metric=${m.metric}&days=${days}`
+            );
+            results[m.key] = await res.json();
+          })
+        ),
+        fetch(`/api/dosing?days=${days}`),
+      ]);
       setData(results);
+      const dosingData = await dosingRes.json();
+      setDosingEvents(dosingData.logs ?? []);
     }
     load();
   }, [days]);
+
+  function getDosingMarkers(metricKey: string): { timestamp: string; chemical: string }[] {
+    const chemicals = DOSING_METRIC_MAP[metricKey];
+    if (!chemicals) return [];
+    const readings = data[metricKey] ?? [];
+    if (readings.length === 0) return [];
+
+    const relevant = dosingEvents.filter((e) => chemicals.includes(e.chemical));
+    return relevant.map((ev) => {
+      const evTime = new Date(ev.timestamp).getTime();
+      let closest = readings[0].timestamp;
+      let minDiff = Math.abs(new Date(closest).getTime() - evTime);
+      for (const r of readings) {
+        const diff = Math.abs(new Date(r.timestamp).getTime() - evTime);
+        if (diff < minDiff) {
+          minDiff = diff;
+          closest = r.timestamp;
+        }
+      }
+      return { timestamp: closest, chemical: ev.chemical };
+    });
+  }
 
   return (
     <div className="space-y-6">
@@ -195,6 +237,21 @@ export default function WaterQualityPage() {
                         label={{ value: m.minLine.label, fontSize: 11, fill: "#f59e0b" }}
                       />
                     )}
+                    {getDosingMarkers(m.key).map((marker, i) => (
+                      <ReferenceLine
+                        key={`dosing-${m.key}-${i}`}
+                        x={marker.timestamp}
+                        stroke="#d946ef"
+                        strokeDasharray="4 3"
+                        strokeWidth={1.5}
+                        label={{
+                          value: "Dosierung",
+                          position: "insideTopRight",
+                          fontSize: 10,
+                          fill: "#d946ef",
+                        }}
+                      />
+                    ))}
                     <Area
                       type="monotone"
                       dataKey="value"
