@@ -22,22 +22,19 @@ ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
-
 COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 
 # Ensure libsql native bindings are present (dynamic require may escape Next.js trace)
 COPY --from=deps /app/node_modules/libsql ./node_modules/libsql
 COPY --from=deps /app/node_modules/@libsql ./node_modules/@libsql
 
-# SQLite data directory
-RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
-VOLUME /app/data
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
-USER nextjs
+VOLUME /app/data
 EXPOSE 3000
 
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["node", "server.js"]
