@@ -21,7 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FlaskConical, Plus, Trash2 } from "lucide-react";
+import { FlaskConical, Plus, Trash2, AlertTriangle } from "lucide-react";
 
 interface DosingEntry {
   id: number;
@@ -62,13 +62,21 @@ export default function DosingPage() {
   const [timestamp, setTimestamp] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
 
+  const [error, setError] = useState<string | null>(null);
+
   const loadData = useCallback(async () => {
-    const params = new URLSearchParams({ days: String(days) });
-    if (filterChemical) params.set("chemical", filterChemical);
-    const res = await fetch(`/api/dosing?${params}`);
-    const data = await res.json();
-    setLogs(data.logs);
-    setChemicals(data.chemicals);
+    try {
+      const params = new URLSearchParams({ days: String(days) });
+      if (filterChemical) params.set("chemical", filterChemical);
+      const res = await fetch(`/api/dosing?${params}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setLogs(data.logs);
+      setChemicals(data.chemicals);
+      setError(null);
+    } catch (err: any) {
+      setError(err.message ?? "Verbindungsfehler");
+    }
   }, [days, filterChemical]);
 
   useEffect(() => {
@@ -118,6 +126,20 @@ export default function DosingPage() {
   async function handleDelete(id: number) {
     await fetch(`/api/dosing?id=${id}`, { method: "DELETE" });
     await loadData();
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center py-32">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
+            <AlertTriangle className="h-6 w-6 text-destructive" />
+          </div>
+          <p className="text-sm font-medium text-destructive">Dosierungsdaten konnten nicht geladen werden</p>
+          <p className="text-xs text-muted-foreground">{error}</p>
+        </div>
+      </div>
+    );
   }
 
   return (

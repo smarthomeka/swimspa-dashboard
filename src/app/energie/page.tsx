@@ -14,7 +14,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { Zap, TrendingDown, Receipt } from "lucide-react";
+import { Zap, TrendingDown, Receipt, AlertTriangle } from "lucide-react";
 
 interface EnergyDay {
   date: string;
@@ -54,27 +54,34 @@ export default function EnergyPage() {
     Array<{ date: string; kwh: number; avgW: number }>
   >([]);
   const [powerData, setPowerData] = useState<Reading[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
-      const [energyRes, powerRes] = await Promise.all([
-        fetch(`/api/readings?type=energy&days=${days}`),
-        fetch(
-          `/api/readings?type=history&source=shelly&metric=power_w&days=${Math.min(days, 7)}`
-        ),
-      ]);
-      const energy: EnergyDay[] = await energyRes.json();
-      setPowerData(await powerRes.json());
+      try {
+        const [energyRes, powerRes] = await Promise.all([
+          fetch(`/api/readings?type=energy&days=${days}`),
+          fetch(
+            `/api/readings?type=history&source=shelly&metric=power_w&days=${Math.min(days, 7)}`
+          ),
+        ]);
+        if (!energyRes.ok || !powerRes.ok) throw new Error(`HTTP ${energyRes.status}`);
+        const energy: EnergyDay[] = await energyRes.json();
+        setPowerData(await powerRes.json());
 
-      const daily = energy.map((d, i) => ({
-        date: d.date,
-        kwh:
-          i > 0
-            ? Math.max(0, d.maxKwh - energy[i - 1].maxKwh)
-            : d.maxKwh - d.minKwh,
-        avgW: Math.round(d.avgPowerW ?? 0),
-      }));
-      setDailyData(daily);
+        const daily = energy.map((d, i) => ({
+          date: d.date,
+          kwh:
+            i > 0
+              ? Math.max(0, d.maxKwh - energy[i - 1].maxKwh)
+              : d.maxKwh - d.minKwh,
+          avgW: Math.round(d.avgPowerW ?? 0),
+        }));
+        setDailyData(daily);
+        setError(null);
+      } catch (err: any) {
+        setError(err.message ?? "Verbindungsfehler");
+      }
     }
     load();
   }, [days]);
@@ -85,6 +92,20 @@ export default function EnergyPage() {
 
   const gridStroke = "oklch(0.88 0.005 185)";
   const tickFill = "oklch(0.48 0.02 185)";
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center py-32">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
+            <AlertTriangle className="h-6 w-6 text-destructive" />
+          </div>
+          <p className="text-sm font-medium text-destructive">Energiedaten konnten nicht geladen werden</p>
+          <p className="text-xs text-muted-foreground">{error}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 animate-fade-up">

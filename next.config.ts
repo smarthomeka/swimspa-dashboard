@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  outputFileTracingIncludes: {
+    "/api/**": ["./node_modules/better-sqlite3/**/*"],
+  },
   turbopack: {
     resolveAlias: {
       // recharts 3.8 imports deep paths like es-toolkit/compat/get,

@@ -221,20 +221,34 @@ export default function EinstellungenPage() {
   const [clearingData, setClearingData] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [seedSuccess, setSeedSuccess] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const loadSystemInfo = useCallback(() => {
     fetch("/api/system")
-      .then((r) => r.json())
-      .then(setSystemInfo);
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(setSystemInfo)
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/settings").then((r) => r.json()),
-      fetch("/api/system").then((r) => r.json()),
+      fetch("/api/settings").then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      }),
+      fetch("/api/system").then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      }),
     ]).then(([settingsData, sysData]) => {
       setSettings(settingsData);
       setSystemInfo(sysData);
+      setLoading(false);
+    }).catch((err) => {
+      setError(err.message ?? "Verbindungsfehler");
       setLoading(false);
     });
   }, []);
@@ -303,6 +317,20 @@ export default function EinstellungenPage() {
         <div className="flex flex-col items-center gap-4">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
           <p className="text-sm font-medium text-muted-foreground">Lade Einstellungen...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center py-32">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
+            <AlertTriangle className="h-6 w-6 text-destructive" />
+          </div>
+          <p className="text-sm font-medium text-destructive">Einstellungen konnten nicht geladen werden</p>
+          <p className="text-xs text-muted-foreground">{error}</p>
         </div>
       </div>
     );

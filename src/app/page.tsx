@@ -38,12 +38,31 @@ interface LatestData {
 
 export default function OverviewPage() {
   const [data, setData] = useState<LatestData | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/readings?type=latest")
-      .then((r) => r.json())
-      .then(setData);
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(setData)
+      .catch((err) => setError(err.message ?? "Verbindungsfehler"));
   }, []);
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center py-32">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
+            <Info className="h-6 w-6 text-destructive" />
+          </div>
+          <p className="text-sm font-medium text-destructive">Daten konnten nicht geladen werden</p>
+          <p className="text-xs text-muted-foreground">{error}</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!data) {
     return (

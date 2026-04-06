@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -111,24 +112,32 @@ export default function WaterQualityPage() {
   const [days, setDays] = useState<number>(7);
   const [data, setData] = useState<Record<string, Reading[]>>({});
   const [dosingEvents, setDosingEvents] = useState<DosingEvent[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
-      const results: Record<string, Reading[]> = {};
-      const [, dosingRes] = await Promise.all([
-        Promise.all(
-          METRICS.map(async (m) => {
-            const res = await fetch(
-              `/api/readings?type=history&source=${m.source}&metric=${m.metric}&days=${days}`
-            );
-            results[m.key] = await res.json();
-          })
-        ),
-        fetch(`/api/dosing?days=${days}`),
-      ]);
-      setData(results);
-      const dosingData = await dosingRes.json();
-      setDosingEvents(dosingData.logs ?? []);
+      try {
+        const results: Record<string, Reading[]> = {};
+        const [, dosingRes] = await Promise.all([
+          Promise.all(
+            METRICS.map(async (m) => {
+              const res = await fetch(
+                `/api/readings?type=history&source=${m.source}&metric=${m.metric}&days=${days}`
+              );
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+              results[m.key] = await res.json();
+            })
+          ),
+          fetch(`/api/dosing?days=${days}`),
+        ]);
+        if (!dosingRes.ok) throw new Error(`HTTP ${dosingRes.status}`);
+        setData(results);
+        const dosingData = await dosingRes.json();
+        setDosingEvents(dosingData.logs ?? []);
+        setError(null);
+      } catch (err: any) {
+        setError(err.message ?? "Verbindungsfehler");
+      }
     }
     load();
   }, [days]);
@@ -157,6 +166,20 @@ export default function WaterQualityPage() {
 
   const gridStroke = "oklch(0.88 0.005 185)";
   const tickFill = "oklch(0.48 0.02 185)";
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center py-32">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
+            <AlertTriangle className="h-6 w-6 text-destructive" />
+          </div>
+          <p className="text-sm font-medium text-destructive">Wasserqualitätsdaten konnten nicht geladen werden</p>
+          <p className="text-xs text-muted-foreground">{error}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 animate-fade-up">
