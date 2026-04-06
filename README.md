@@ -18,9 +18,10 @@ Web dashboard for monitoring and managing an Armstark Lotus 460 SwimSpa. Built w
 cp .env.example .env
 ```
 
-2. Start the dashboard:
+2. Pull and start the dashboard:
 
 ```bash
+docker compose pull
 docker compose up -d
 ```
 
@@ -28,21 +29,44 @@ The dashboard is available at [http://localhost:3000](http://localhost:3000).
 
 Data is stored in `./data` by default. To use a custom path (e.g. a NAS volume), set `DATA_PATH` in your `.env` file.
 
-To rebuild after updates:
+To update to the latest version:
 
 ```bash
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
+
+### GHCR Authentication
+
+The Docker image is hosted on GitHub Container Registry (`ghcr.io`).
+
+**If the package is public** (recommended), no authentication is needed — `docker compose pull` works out of the box.
+
+**If you get a `401 unauthorized` error** when pulling, the package is still private. Either:
+
+- **Make it public** (repo owner, one-time): Go to [Package Settings](https://github.com/users/smarthomeka/packages/container/swimspa-dashboard/settings) → Change visibility to **Public**
+- **Or log in to GHCR** on the machine:
+  ```bash
+  echo YOUR_GITHUB_PAT | docker login ghcr.io -u smarthomeka --password-stdin
+  ```
+  Requires a [GitHub Personal Access Token](https://github.com/settings/tokens) with `read:packages` scope.
 
 ### Ugreen NAS Deployment
 
-On a Ugreen NAS running UGOS, create a shared folder (e.g. `swimspa`) and set the volume path in `.env`:
+On a Ugreen NAS running UGOS:
 
-```bash
-DATA_PATH=/volume1/swimspa
-```
+1. Create a shared folder (e.g. `swimspa`) and set the volume path in `.env`:
+   ```bash
+   DATA_PATH=/volume1/swimspa
+   ```
 
-Then start normally with `docker compose up -d`. The SQLite database and all persistent data will be stored on the NAS volume.
+2. Pull and start:
+   ```bash
+   docker compose pull
+   docker compose up -d
+   ```
+
+The SQLite database and all persistent data will be stored on the NAS volume.
 
 ## Development
 
