@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import {
   getLatestValues,
   getDosingLogs,
@@ -9,6 +10,8 @@ import {
   insertRecommendation,
   getDosingResponses,
 } from "@/lib/db/queries";
+
+const execFileAsync = promisify(execFile);
 
 const TARGET_RANGES = {
   ph: { min: 7.2, max: 7.6, unit: "" },
@@ -122,65 +125,71 @@ Wenn Dosierungs-Wirkung-Muster vorhanden sind, nutze diese für präzisere Menge
 Sei konkret und praxisnah. Keine generischen Ratschläge.`;
 
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: "ANTHROPIC_API_KEY nicht konfiguriert. Bitte in den Umgebungsvariablen setzen." },
-      { status: 503 }
-    );
-  }
-
   const body = await request.json().catch(() => ({}));
   const userMessage = body.message as string | undefined;
 
   const context = buildContext();
   const contextText = JSON.stringify(context, null, 2);
 
-  const messages: Anthropic.MessageParam[] = [
-    {
-      role: "user",
-      content: `Hier sind die aktuellen SwimSpa-Daten:\n\n\`\`\`json\n${contextText}\n\`\`\`\n\n${
-        userMessage
-          ? userMessage
-          : "Erstelle bitte eine tägliche Analyse mit Dosierungsempfehlungen und Energietipps."
-      }`,
-    },
-  ];
+  const prompt = `Hier sind die aktuellen SwimSpa-Daten:\n\n\`\`\`json\n${contextText}\n\`\`\`\n\n${
+    userMessage
+      ? userMessage
+      : "Erstelle bitte eine tägliche Analyse mit Dosierungsempfehlungen und Energietipps."
+  }`;
 
-  const model = "claude-haiku-4-5-20251001";
+  const model = "haiku";
+  const claudePath = process.env.CLAUDE_CLI_PATH || "claude";
 
   try {
-    const client = new Anthropic({ apiKey });
-    const response = await client.messages.create({
-      model,
-      max_tokens: 1500,
-      system: SYSTEM_PROMPT,
-      messages,
-    });
+    const { stdout } = await execFileAsync(
+      claudePath,
+      [
+        "-p",
+        prompt,
+        "--model", model,
+        "--system-prompt", SYSTEM_PROMPT,
+        "--output-format", "json",
+        "--no-session-persistence",
+        "--bare",
+      ],
+      {
+        timeout: 120_000,
+        maxBuffer: 1024 * 1024,
+        env: { ...process.env, TERM: "dumb" },
+      },
+    );
 
-    const text = response.content
-      .filter((block): block is Anthropic.TextBlock => block.type === "text")
-      .map((block) => block.text)
-      .join("\n");
+    const result = JSON.parse(stdout);
+    const text = typeof result.result === "string"
+      ? result.result
+      : Array.isArray(result.result)
+        ? result.result
+            .filter((b: { type: string }) => b.type === "text")
+            .map((b: { text: string }) => b.text)
+            .join("\n")
+        : String(result.result ?? stdout);
 
     // Store the recommendation
     const stored = insertRecommendation({
       summary: text.slice(0, 200),
       recommendations: JSON.stringify({ text }),
       context: contextText,
-      model,
+      model: result.model ?? model,
       timestamp: new Date().toISOString(),
     });
 
     return NextResponse.json({
       id: stored.id,
       text,
-      model,
+      model: result.model ?? model,
       timestamp: stored.timestamp,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unbekannter Fehler";
-    return NextResponse.json({ error: `Claude API Fehler: ${message}` }, { status: 500 });
+    return NextResponse.json(
+      { error: `Claude Code Fehler: ${message}` },
+      { status: 500 },
+    );
   }
 }
 
