@@ -46,12 +46,12 @@ export function Nav() {
       <header className="sticky top-0 z-40 border-b border-border/40 glass">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="flex h-16 items-center justify-between">
-            <div className="flex items-center gap-8">
+            <div className="flex items-center gap-4 lg:gap-8">
               <Link href="/" className="flex items-center gap-3 group">
                 <div className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 transition-colors group-hover:bg-primary/15">
                   <Waves className="h-5 w-5 text-primary" />
                 </div>
-                <div className="hidden sm:block">
+                <div className="hidden md:block">
                   <span className="font-heading text-xl font-semibold tracking-tight text-foreground">
                     SwimSpa
                   </span>
@@ -60,20 +60,21 @@ export function Nav() {
                   </span>
                 </div>
               </Link>
-              <nav className="hidden sm:flex gap-0.5">
-                {links.map(({ href, label, icon: Icon }) => (
+              <nav className="hidden md:flex gap-0.5">
+                {links.map(({ href, label, shortLabel, icon: Icon }) => (
                   <Link
                     key={href}
                     href={href}
                     className={cn(
-                      "relative flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
+                      "relative flex items-center gap-1.5 rounded-lg px-2 lg:px-3 py-2 text-sm font-medium transition-all duration-200",
                       pathname === href
                         ? "text-primary"
                         : "text-muted-foreground hover:text-foreground"
                     )}
                   >
                     <Icon className="h-4 w-4" />
-                    {label}
+                    <span className="hidden lg:inline">{label}</span>
+                    <span className="lg:hidden">{shortLabel}</span>
                     {pathname === href && (
                       <span className="absolute inset-x-1 -bottom-[calc(0.5rem+1px)] h-0.5 rounded-full bg-primary" />
                     )}
@@ -93,7 +94,7 @@ export function Nav() {
       </header>
 
       {/* Mobile bottom tab bar — refined with active indicator */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 flex sm:hidden border-t border-border/40 glass pb-[env(safe-area-inset-bottom)]">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 flex md:hidden border-t border-border/40 glass pb-[env(safe-area-inset-bottom)]">
         {links.map(({ href, shortLabel, icon: Icon }) => (
           <Link
             key={href}
