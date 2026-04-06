@@ -26,11 +26,23 @@ docker compose up -d
 
 The dashboard is available at [http://localhost:3000](http://localhost:3000).
 
+Data is stored in `./data` by default. To use a custom path (e.g. a NAS volume), set `DATA_PATH` in your `.env` file.
+
 To rebuild after updates:
 
 ```bash
 docker compose up -d --build
 ```
+
+### Ugreen NAS Deployment
+
+On a Ugreen NAS running UGOS, create a shared folder (e.g. `swimspa`) and set the volume path in `.env`:
+
+```bash
+DATA_PATH=/volume1/swimspa
+```
+
+Then start normally with `docker compose up -d`. The SQLite database and all persistent data will be stored on the NAS volume.
 
 ## Development
 
@@ -52,6 +64,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `SHELLY_HOST` | Shelly 3EM local network address |
 | `BLUECONNECT_API_URL` | BlueConnect API endpoint |
 | `BLUECONNECT_API_KEY` | BlueConnect API key |
+| `DATA_PATH` | Data volume path for persistent storage (default: `./data`) |
 
 ## Tech Stack
 

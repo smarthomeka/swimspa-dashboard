@@ -7,7 +7,4 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - swimspa-data:/app/data
-
-volumes:
-  swimspa-data:
+      - ${DATA_PATH:-./data}:/app/data
