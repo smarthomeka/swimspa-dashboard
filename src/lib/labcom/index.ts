@@ -1,0 +1,1 @@
+export { labcomService } from "./service";

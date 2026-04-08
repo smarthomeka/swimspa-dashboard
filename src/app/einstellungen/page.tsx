@@ -42,7 +42,7 @@ const PROVIDERS: ProviderMeta[] = [
     icon: FlaskConical,
     accentColor: "#8b5cf6",
     fields: [
-      { key: "apiUrl", label: "API URL", placeholder: "https://api.labcom.cloud" },
+      { key: "apiUrl", label: "API URL", placeholder: "https://backend.labcom.cloud/graphql" },
       { key: "apiKey", label: "API Key", placeholder: "Dein Labcom API Key", secret: true },
     ],
   },
