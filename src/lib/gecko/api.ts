@@ -1,149 +1,101 @@
 /**
- * Gecko in.Touch 2 REST API client.
+ * Gecko in.Touch 2 local API client.
  *
- * Handles Auth0 OAuth2 + PKCE authentication and the Gecko REST API
- * for account info, vessel discovery, and MQTT session creation.
+ * Connects to the Gecko spa controller via its local network IP address
+ * using a Python bridge (geckolib UDP protocol on port 10022).
+ * No cloud services, no OAuth — pure local network communication.
  */
 
-// Auth0 configuration (from HA gecko integration — public client)
-const AUTH0_DOMAIN = "https://gecko-prod.us.auth0.com";
-const AUTH0_CLIENT_ID = "L81oh6hgUsvMg40TgTGoz4lxNy8eViM0";
-const GECKO_API_BASE = "https://api.geckowatermonitor.com";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import path from "node:path";
 
-// ── Token exchange ────────────────────────────────────────────────
+const execFileAsync = promisify(execFile);
 
-export type GeckoTokens = {
-  access_token: string;
-  refresh_token: string;
-  id_token?: string;
-  expires_in: number;
-  token_type: string;
+const BRIDGE_SCRIPT = path.join(process.cwd(), "scripts", "gecko_bridge.py");
+const PYTHON = "python3";
+
+// ── Types ────────────────────────────────────────────────────────
+
+export type GeckoPumpState = {
+  id: string;
+  active: boolean;
+  mode: string | null;
 };
+
+export type GeckoLightState = {
+  id: string;
+  active: boolean;
+};
+
+export type GeckoSpaReading = {
+  spaName: string;
+  spaId: string;
+  temperature: number | null;
+  setPoint: number | null;
+  heatingStatus: string | null; // "Heating" | "Cooling" | "Idle" | null
+  minTemp: number | null;
+  maxTemp: number | null;
+  tempUnit: string | null;
+  pumps: GeckoPumpState[];
+  lights: GeckoLightState[];
+  watercare: string | null;
+};
+
+export type GeckoDiscoveredSpa = {
+  spaId: string;
+  spaName: string;
+  address: string;
+};
+
+// ── Bridge calls ─────────────────────────────────────────────────
 
 /**
- * Direct credential login using Auth0 Resource Owner Password Grant.
- * Avoids the OAuth2 redirect flow entirely — no callback URL registration needed.
+ * Run the Python bridge script and parse its JSON output.
  */
-export async function loginWithCredentials(
-  email: string,
-  password: string
-): Promise<GeckoTokens> {
-  const res = await fetch(`${AUTH0_DOMAIN}/oauth/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      grant_type: "password",
-      client_id: AUTH0_CLIENT_ID,
-      username: email,
-      password,
-      audience: `${GECKO_API_BASE}/`,
-      scope: "openid profile email offline_access",
-    }),
+async function runBridge(args: string[]): Promise<Record<string, unknown>> {
+  const { stdout, stderr } = await execFileAsync(PYTHON, [BRIDGE_SCRIPT, ...args], {
+    timeout: 35_000,
+    env: { ...process.env },
   });
-  if (!res.ok) {
-    const text = await res.text();
-    let message = "Login fehlgeschlagen";
-    try {
-      const err = JSON.parse(text);
-      if (err.error === "invalid_grant") {
-        message = "E-Mail oder Passwort falsch";
-      } else if (err.error_description) {
-        message = err.error_description;
-      }
-    } catch {
-      // use default message
-    }
-    throw new Error(message);
+
+  if (stderr) {
+    console.warn("[Gecko] Bridge stderr:", stderr.trim());
   }
-  return res.json();
-}
 
-export async function refreshAccessToken(
-  refreshToken: string
-): Promise<GeckoTokens> {
-  const res = await fetch(`${AUTH0_DOMAIN}/oauth/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      grant_type: "refresh_token",
-      client_id: AUTH0_CLIENT_ID,
-      refresh_token: refreshToken,
-    }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Auth0 token refresh failed (${res.status}): ${text}`);
+  const result = JSON.parse(stdout.trim());
+
+  if (!result.ok) {
+    throw new Error(result.error ?? "Bridge returned error");
   }
-  return res.json();
+
+  return result;
 }
 
-// ── Gecko REST API ────────────────────────────────────────────────
-
-async function geckoGet(path: string, accessToken: string) {
-  const res = await fetch(`${GECKO_API_BASE}${path}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Gecko API ${path} failed (${res.status}): ${text}`);
-  }
-  return res.json();
+/**
+ * Discover Gecko spas on the local network via UDP broadcast.
+ */
+export async function discoverSpas(): Promise<GeckoDiscoveredSpa[]> {
+  const result = await runBridge(["discover"]);
+  return (result.spas as GeckoDiscoveredSpa[]) ?? [];
 }
 
-export type GeckoUserInfo = {
-  sub: string;
-};
-
-export async function getUserInfo(accessToken: string): Promise<GeckoUserInfo> {
-  const res = await fetch(`${AUTH0_DOMAIN}/userinfo`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!res.ok) throw new Error(`Auth0 userinfo failed (${res.status})`);
-  return res.json();
-}
-
-export type GeckoAccount = {
-  accountId: string;
-};
-
-export async function getAccount(
-  userId: string,
-  accessToken: string
-): Promise<GeckoAccount> {
-  const data = await geckoGet(`/v2/user/${userId}`, accessToken);
-  return { accountId: data.account?.accountId ?? data.accountId };
-}
-
-export type GeckoVessel = {
-  vesselId: string;
-  monitorId: string;
-  name: string;
-  type: string;
-  protocolName?: string;
-};
-
-export async function getVessels(
-  accountId: string,
-  accessToken: string
-): Promise<GeckoVessel[]> {
-  const data = await geckoGet(
-    `/v4/accounts/${accountId}/vessels`,
-    accessToken
-  );
-  return data.vessels ?? data;
-}
-
-export type MqttSession = {
-  brokerUrl: string;
-};
-
-export async function getMqttSession(
-  monitorId: string,
-  accessToken: string
-): Promise<MqttSession> {
-  const data = await geckoGet(
-    `/v1/monitors/${monitorId}/iot/thirdPartySession`,
-    accessToken
-  );
-  return { brokerUrl: data.brokerUrl };
+/**
+ * Connect to a Gecko spa at the given IP and read its current state.
+ */
+export async function readSpaState(host: string): Promise<GeckoSpaReading> {
+  const result = await runBridge([host]);
+  return {
+    spaName: (result.spaName as string) ?? "Unbekannt",
+    spaId: (result.spaId as string) ?? "",
+    temperature: (result.temperature as number) ?? null,
+    setPoint: (result.setPoint as number) ?? null,
+    heatingStatus: (result.heatingStatus as string) ?? null,
+    minTemp: (result.minTemp as number) ?? null,
+    maxTemp: (result.maxTemp as number) ?? null,
+    tempUnit: (result.tempUnit as string) ?? null,
+    pumps: (result.pumps as GeckoPumpState[]) ?? [],
+    lights: (result.lights as GeckoLightState[]) ?? [],
+    watercare: (result.watercare as string) ?? null,
+  };
 }

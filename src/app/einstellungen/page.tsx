@@ -18,7 +18,6 @@ import {
   AlertTriangle,
   HardDrive,
   Info,
-  LogIn,
   LogOut,
   RefreshCw,
   Wifi,
@@ -75,16 +74,17 @@ type SettingsData = Record<
 >;
 
 type GeckoStatus = {
-  authenticated: boolean;
-  connected: boolean;
-  vesselName: string | null;
-  monitorId: string | null;
-  lastState: {
-    temperatureZones: { temperature: number | null; setPoint: number | null; status: number }[];
-    flowZones: { active: boolean; speed: number | null }[];
-    connectivity: { gatewayStatus: string; vesselStatus: string };
-    lastUpdated: string;
+  configured: boolean;
+  host: string | null;
+  polling: boolean;
+  spaName: string | null;
+  lastReading: {
+    temperature: number | null;
+    setPoint: number | null;
+    heatingStatus: string | null;
+    pumps: { id: string; active: boolean }[];
   } | null;
+  lastSyncAt: string | null;
   error: string | null;
 };
 
@@ -100,37 +100,34 @@ type SystemInfo = {
 };
 
 function GeckoCard({ geckoStatus, onRefreshStatus }: { geckoStatus: GeckoStatus | null; onRefreshStatus: () => void }) {
-  const [loggingIn, setLoggingIn] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const [host, setHost] = useState("");
 
-  const handleLogin = useCallback(async (e: React.FormEvent) => {
+  const handleConnect = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoggingIn(true);
-    setLoginError(null);
+    setConnecting(true);
+    setConnectError(null);
     try {
-      const res = await fetch("/api/gecko/login", {
+      const res = await fetch("/api/gecko/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ host }),
       });
       const data = await res.json();
       if (!res.ok) {
-        setLoginError(data.error ?? "Login fehlgeschlagen");
+        setConnectError(data.error ?? "Verbindung fehlgeschlagen");
         return;
       }
-      setEmail("");
-      setPassword("");
       onRefreshStatus();
     } catch {
-      setLoginError("Verbindungsfehler");
+      setConnectError("Verbindungsfehler");
     } finally {
-      setLoggingIn(false);
+      setConnecting(false);
     }
-  }, [email, password, onRefreshStatus]);
+  }, [host, onRefreshStatus]);
 
   const handleSync = useCallback(async () => {
     setSyncing(true);
@@ -152,15 +149,15 @@ function GeckoCard({ geckoStatus, onRefreshStatus }: { geckoStatus: GeckoStatus 
     }
   }, [onRefreshStatus]);
 
-  const isConnected = geckoStatus?.connected ?? false;
-  const isAuthenticated = geckoStatus?.authenticated ?? false;
-  const temp = geckoStatus?.lastState?.temperatureZones?.[0]?.temperature;
-  const setPoint = geckoStatus?.lastState?.temperatureZones?.[0]?.setPoint;
-  const pumpActive = geckoStatus?.lastState?.flowZones?.some(f => f.active);
+  const isConfigured = geckoStatus?.configured ?? false;
+  const isPolling = geckoStatus?.polling ?? false;
+  const temp = geckoStatus?.lastReading?.temperature;
+  const setPoint = geckoStatus?.lastReading?.setPoint;
+  const pumpActive = geckoStatus?.lastReading?.pumps?.some(p => p.active);
 
   return (
-    <Card className={`card-glow relative overflow-hidden transition-all duration-300 ${isConnected ? "ring-1 ring-primary/20" : ""}`}>
-      {isConnected && (
+    <Card className={`card-glow relative overflow-hidden transition-all duration-300 ${isPolling ? "ring-1 ring-primary/20" : ""}`}>
+      {isPolling && (
         <div
           className="absolute top-0 left-0 right-0 h-[2px]"
           style={{ background: "linear-gradient(90deg, #ef4444, transparent)" }}
@@ -178,15 +175,15 @@ function GeckoCard({ geckoStatus, onRefreshStatus }: { geckoStatus: GeckoStatus 
             <div>
               <CardTitle className="text-base">Gecko in.Touch 2</CardTitle>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {geckoStatus?.vesselName
-                  ? `${geckoStatus.vesselName} — Wassertemperatur, Pumpenstatus`
-                  : "Armstark Lotus 460 Controller — Wassertemperatur, Pumpenstatus"}
+                {geckoStatus?.spaName
+                  ? `${geckoStatus.spaName} — Wassertemperatur, Pumpenstatus`
+                  : "Lokale Verbindung — Wassertemperatur, Pumpenstatus"}
               </p>
             </div>
           </div>
-          {isConnected ? (
+          {isPolling ? (
             <Wifi className="h-5 w-5 text-emerald-500" />
-          ) : isAuthenticated ? (
+          ) : isConfigured ? (
             <WifiOff className="h-5 w-5 text-amber-500" />
           ) : null}
         </div>
@@ -198,7 +195,7 @@ function GeckoCard({ geckoStatus, onRefreshStatus }: { geckoStatus: GeckoStatus 
           </div>
         )}
 
-        {isConnected && geckoStatus?.lastState && (
+        {isPolling && geckoStatus?.lastReading && (
           <div className="grid grid-cols-3 gap-3 rounded-xl border border-border/50 bg-muted/30 p-3">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Temperatur</p>
@@ -221,44 +218,37 @@ function GeckoCard({ geckoStatus, onRefreshStatus }: { geckoStatus: GeckoStatus 
           </div>
         )}
 
-        {!isAuthenticated && (
-          <form onSubmit={handleLogin} className="space-y-2">
-            {loginError && (
+        {!isConfigured && (
+          <form onSubmit={handleConnect} className="space-y-2">
+            {connectError && (
               <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3">
-                <p className="text-xs text-destructive">{loginError}</p>
+                <p className="text-xs text-destructive">{connectError}</p>
               </div>
             )}
-            <div className="grid grid-cols-2 gap-2">
+            <div>
               <input
-                type="email"
-                placeholder="E-Mail"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                type="text"
+                placeholder="IP-Adresse (z.B. 192.168.1.50)"
+                value={host}
+                onChange={(e) => setHost(e.target.value)}
                 required
-                className="rounded-lg border border-border/50 bg-muted/30 px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
-              />
-              <input
-                type="password"
-                placeholder="Passwort"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="rounded-lg border border-border/50 bg-muted/30 px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+                pattern="^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"
+                className="w-full rounded-lg border border-border/50 bg-muted/30 px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
               />
             </div>
-            <Button size="sm" type="submit" disabled={loggingIn}>
-              {loggingIn ? (
+            <Button size="sm" type="submit" disabled={connecting}>
+              {connecting ? (
                 <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
               ) : (
-                <LogIn className="mr-1.5 h-4 w-4" />
+                <Wifi className="mr-1.5 h-4 w-4" />
               )}
-              Mit Gecko anmelden
+              Verbinden
             </Button>
           </form>
         )}
 
         <div className="flex flex-wrap gap-2">
-          {isAuthenticated && (
+          {isConfigured && (
             <>
               <Button size="sm" onClick={handleSync} disabled={syncing}>
                 {syncing ? (
@@ -266,9 +256,9 @@ function GeckoCard({ geckoStatus, onRefreshStatus }: { geckoStatus: GeckoStatus 
                 ) : (
                   <RefreshCw className="mr-1.5 h-4 w-4" />
                 )}
-                {isConnected ? "Aktualisieren" : "Verbinden"}
+                Aktualisieren
               </Button>
-              {isConnected && (
+              {isPolling && (
                 <Button size="sm" variant="outline" onClick={handleDisconnect} disabled={disconnecting}>
                   {disconnecting ? (
                     <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
@@ -282,9 +272,10 @@ function GeckoCard({ geckoStatus, onRefreshStatus }: { geckoStatus: GeckoStatus 
           )}
         </div>
 
-        {isConnected && geckoStatus?.lastState?.lastUpdated && (
+        {isConfigured && geckoStatus?.host && (
           <p className="text-[10px] text-muted-foreground">
-            Letzte Aktualisierung: {new Date(geckoStatus.lastState.lastUpdated).toLocaleString("de-DE")}
+            Verbunden mit {geckoStatus.host}
+            {geckoStatus.lastSyncAt && ` — Letzte Aktualisierung: ${new Date(geckoStatus.lastSyncAt).toLocaleString("de-DE")}`}
           </p>
         )}
       </CardContent>
