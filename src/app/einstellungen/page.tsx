@@ -249,6 +249,13 @@ function GeckoCard({ geckoStatus, onRefreshStatus }: { geckoStatus: GeckoStatus 
   );
 }
 
+type ProviderStatus = {
+  configured: boolean;
+  polling: boolean;
+  lastSyncAt: string | null;
+  error: string | null;
+};
+
 function ProviderCard({
   meta,
   data,
@@ -266,6 +273,48 @@ function ProviderCard({
 }) {
   const Icon = meta.icon;
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncSuccess, setSyncSuccess] = useState(false);
+  const [providerStatus, setProviderStatus] = useState<ProviderStatus | null>(null);
+
+  const syncEndpoint = meta.key === "labcom" ? "/api/labcom/sync" : meta.key === "shelly" ? "/api/shelly/sync" : null;
+  const statusEndpoint = meta.key === "labcom" ? "/api/labcom/status" : null;
+
+  // Load status on mount if enabled
+  useEffect(() => {
+    if (!data.enabled || !statusEndpoint) return;
+    fetch(statusEndpoint)
+      .then((r) => r.ok ? r.json() : null)
+      .then((s) => { if (s) setProviderStatus(s); })
+      .catch(() => {});
+  }, [data.enabled, statusEndpoint]);
+
+  const handleSync = useCallback(async () => {
+    if (!syncEndpoint) return;
+    setSyncing(true);
+    setSyncError(null);
+    setSyncSuccess(false);
+    try {
+      const res = await fetch(syncEndpoint, { method: "POST" });
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        setSyncError(json.error ?? `HTTP ${res.status}`);
+      } else {
+        setSyncSuccess(true);
+        setTimeout(() => setSyncSuccess(false), 3000);
+        // Refresh status
+        if (statusEndpoint) {
+          const sr = await fetch(statusEndpoint);
+          if (sr.ok) setProviderStatus(await sr.json());
+        }
+      }
+    } catch (err: any) {
+      setSyncError(err.message ?? "Verbindungsfehler");
+    } finally {
+      setSyncing(false);
+    }
+  }, [syncEndpoint, statusEndpoint]);
 
   return (
     <Card className={`card-glow relative overflow-hidden transition-all duration-300 ${data.enabled ? "ring-1 ring-primary/20" : ""}`}>
@@ -341,21 +390,55 @@ function ProviderCard({
               </div>
             </div>
           ))}
-          <Button
-            size="sm"
-            onClick={() => onSave(meta.key)}
-            disabled={saving}
-            className="mt-3"
-          >
-            {saving ? (
-              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-            ) : saved ? (
-              <Check className="mr-1.5 h-4 w-4" />
-            ) : (
-              <Save className="mr-1.5 h-4 w-4" />
+          {syncError && (
+            <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3">
+              <p className="text-xs text-destructive">{syncError}</p>
+            </div>
+          )}
+
+          {syncSuccess && (
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3">
+              <p className="text-xs text-emerald-700 dark:text-emerald-400">Verbindung erfolgreich — Daten werden synchronisiert.</p>
+            </div>
+          )}
+
+          {providerStatus?.polling && providerStatus.lastSyncAt && (
+            <p className="text-[10px] text-muted-foreground">
+              Letzte Synchronisierung: {new Date(providerStatus.lastSyncAt).toLocaleString("de-DE")}
+            </p>
+          )}
+
+          <div className="flex flex-wrap gap-2 mt-3">
+            <Button
+              size="sm"
+              onClick={() => onSave(meta.key)}
+              disabled={saving}
+            >
+              {saving ? (
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+              ) : saved ? (
+                <Check className="mr-1.5 h-4 w-4" />
+              ) : (
+                <Save className="mr-1.5 h-4 w-4" />
+              )}
+              {saved ? "Gespeichert" : "Speichern"}
+            </Button>
+            {syncEndpoint && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleSync}
+                disabled={syncing || saving}
+              >
+                {syncing ? (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-1.5 h-4 w-4" />
+                )}
+                {syncing ? "Synchronisiere..." : providerStatus?.polling ? "Aktualisieren" : "Verbinden"}
+              </Button>
             )}
-            {saved ? "Gespeichert" : "Speichern"}
-          </Button>
+          </div>
         </CardContent>
       )}
     </Card>
@@ -455,6 +538,17 @@ export default function EinstellungenPage() {
       setSavingProvider(null);
       setSavedProvider(provider);
       setTimeout(() => setSavedProvider(null), 2000);
+
+      // Auto-trigger sync after saving if provider is enabled and has config
+      if (s.enabled) {
+        const syncUrl =
+          provider === "labcom" ? "/api/labcom/sync" :
+          provider === "shelly" ? "/api/shelly/sync" :
+          null;
+        if (syncUrl) {
+          fetch(syncUrl, { method: "POST" }).catch(() => {});
+        }
+      }
     },
     [settings]
   );

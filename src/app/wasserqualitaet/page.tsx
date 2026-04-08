@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -108,11 +109,19 @@ function CustomTooltip({ active, payload, label, metricLabel, color }: any) {
   );
 }
 
+type LabcomStatus = {
+  configured: boolean;
+  polling: boolean;
+  lastSyncAt: string | null;
+  error: string | null;
+};
+
 export default function WaterQualityPage() {
   const [days, setDays] = useState<number>(7);
   const [data, setData] = useState<Record<string, Reading[]>>({});
   const [dosingEvents, setDosingEvents] = useState<DosingEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [labcomStatus, setLabcomStatus] = useState<LabcomStatus | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -135,6 +144,17 @@ export default function WaterQualityPage() {
         const dosingData = await dosingRes.json();
         setDosingEvents(dosingData.logs ?? []);
         setError(null);
+
+        // Check if labcom metrics are empty and fetch status for error info
+        const labcomEmpty = METRICS
+          .filter((m) => m.source === "labcom")
+          .every((m) => (results[m.key] ?? []).length === 0);
+        if (labcomEmpty) {
+          const statusRes = await fetch("/api/labcom/status");
+          if (statusRes.ok) setLabcomStatus(await statusRes.json());
+        } else {
+          setLabcomStatus(null);
+        }
       } catch (err: any) {
         setError(err.message ?? "Verbindungsfehler");
       }
@@ -202,6 +222,35 @@ export default function WaterQualityPage() {
           <TabsTrigger value="90">90 Tage</TabsTrigger>
         </TabsList>
       </Tabs>
+
+      {labcomStatus && !labcomStatus.configured && (
+        <Link
+          href="/einstellungen"
+          className="flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 transition-all duration-200 hover:bg-amber-500/10 hover:border-amber-500/30"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div>
+            <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">
+              Labcom PoolLab nicht konfiguriert
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Klicke hier um deine Labcom API-Zugangsdaten einzurichten.
+            </p>
+          </div>
+        </Link>
+      )}
+
+      {labcomStatus?.error && (
+        <div className="flex items-start gap-3 rounded-xl border border-destructive/20 bg-destructive/5 p-4">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+          <div>
+            <p className="text-sm font-semibold text-destructive">
+              Labcom-Synchronisierung fehlgeschlagen
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">{labcomStatus.error}</p>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         {METRICS.map((m) => (
