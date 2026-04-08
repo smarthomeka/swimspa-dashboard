@@ -5,48 +5,10 @@
  * for account info, vessel discovery, and MQTT session creation.
  */
 
-import { randomBytes, createHash } from "crypto";
-
 // Auth0 configuration (from HA gecko integration — public client)
 const AUTH0_DOMAIN = "https://gecko-prod.us.auth0.com";
 const AUTH0_CLIENT_ID = "L81oh6hgUsvMg40TgTGoz4lxNy8eViM0";
 const GECKO_API_BASE = "https://api.geckowatermonitor.com";
-
-// ── PKCE helpers ──────────────────────────────────────────────────
-
-function base64url(buf: Buffer): string {
-  return buf.toString("base64url");
-}
-
-export function generatePkce(): { verifier: string; challenge: string } {
-  const verifier = base64url(randomBytes(32));
-  const challenge = base64url(createHash("sha256").update(verifier).digest());
-  return { verifier, challenge };
-}
-
-export function generateState(): string {
-  return base64url(randomBytes(16));
-}
-
-// ── Auth0 URLs ────────────────────────────────────────────────────
-
-export function buildAuthorizeUrl(
-  redirectUri: string,
-  state: string,
-  codeChallenge: string
-): string {
-  const params = new URLSearchParams({
-    response_type: "code",
-    client_id: AUTH0_CLIENT_ID,
-    redirect_uri: redirectUri,
-    scope: "openid profile email offline_access",
-    state,
-    code_challenge: codeChallenge,
-    code_challenge_method: "S256",
-    audience: `${GECKO_API_BASE}/`,
-  });
-  return `${AUTH0_DOMAIN}/authorize?${params}`;
-}
 
 // ── Token exchange ────────────────────────────────────────────────
 
@@ -58,25 +20,40 @@ export type GeckoTokens = {
   token_type: string;
 };
 
-export async function exchangeCodeForTokens(
-  code: string,
-  redirectUri: string,
-  codeVerifier: string
+/**
+ * Direct credential login using Auth0 Resource Owner Password Grant.
+ * Avoids the OAuth2 redirect flow entirely — no callback URL registration needed.
+ */
+export async function loginWithCredentials(
+  email: string,
+  password: string
 ): Promise<GeckoTokens> {
   const res = await fetch(`${AUTH0_DOMAIN}/oauth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      grant_type: "authorization_code",
+      grant_type: "password",
       client_id: AUTH0_CLIENT_ID,
-      code,
-      redirect_uri: redirectUri,
-      code_verifier: codeVerifier,
+      username: email,
+      password,
+      audience: `${GECKO_API_BASE}/`,
+      scope: "openid profile email offline_access",
     }),
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Auth0 token exchange failed (${res.status}): ${text}`);
+    let message = "Login fehlgeschlagen";
+    try {
+      const err = JSON.parse(text);
+      if (err.error === "invalid_grant") {
+        message = "E-Mail oder Passwort falsch";
+      } else if (err.error_description) {
+        message = err.error_description;
+      }
+    } catch {
+      // use default message
+    }
+    throw new Error(message);
   }
   return res.json();
 }

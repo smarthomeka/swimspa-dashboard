@@ -103,18 +103,34 @@ function GeckoCard({ geckoStatus, onRefreshStatus }: { geckoStatus: GeckoStatus 
   const [loggingIn, setLoggingIn] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
-  const handleLogin = useCallback(async () => {
+  const handleLogin = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
     setLoggingIn(true);
+    setLoginError(null);
     try {
-      const res = await fetch("/api/gecko/auth");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const { url } = await res.json();
-      window.location.href = url;
+      const res = await fetch("/api/gecko/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setLoginError(data.error ?? "Login fehlgeschlagen");
+        return;
+      }
+      setEmail("");
+      setPassword("");
+      onRefreshStatus();
     } catch {
+      setLoginError("Verbindungsfehler");
+    } finally {
       setLoggingIn(false);
     }
-  }, []);
+  }, [email, password, onRefreshStatus]);
 
   const handleSync = useCallback(async () => {
     setSyncing(true);
@@ -205,9 +221,32 @@ function GeckoCard({ geckoStatus, onRefreshStatus }: { geckoStatus: GeckoStatus 
           </div>
         )}
 
-        <div className="flex flex-wrap gap-2">
-          {!isAuthenticated ? (
-            <Button size="sm" onClick={handleLogin} disabled={loggingIn}>
+        {!isAuthenticated && (
+          <form onSubmit={handleLogin} className="space-y-2">
+            {loginError && (
+              <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3">
+                <p className="text-xs text-destructive">{loginError}</p>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="email"
+                placeholder="E-Mail"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="rounded-lg border border-border/50 bg-muted/30 px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+              />
+              <input
+                type="password"
+                placeholder="Passwort"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="rounded-lg border border-border/50 bg-muted/30 px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+              />
+            </div>
+            <Button size="sm" type="submit" disabled={loggingIn}>
               {loggingIn ? (
                 <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
               ) : (
@@ -215,7 +254,11 @@ function GeckoCard({ geckoStatus, onRefreshStatus }: { geckoStatus: GeckoStatus 
               )}
               Mit Gecko anmelden
             </Button>
-          ) : (
+          </form>
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          {isAuthenticated && (
             <>
               <Button size="sm" onClick={handleSync} disabled={syncing}>
                 {syncing ? (
