@@ -5,16 +5,16 @@ import { getAllSettings } from "@/lib/db/settings";
 
 let seeded = false;
 
-async function ensureMockData() {
-  if (!seeded) {
-    await seedMockData();
-    seeded = true;
-  }
-}
-
 async function isDemoMode(): Promise<boolean> {
   const settings = await getAllSettings();
   return !Object.values(settings).some((s) => s.enabled);
+}
+
+async function ensureMockData() {
+  if (!seeded && await isDemoMode()) {
+    await seedMockData();
+    seeded = true;
+  }
 }
 
 export async function GET(request: NextRequest) {

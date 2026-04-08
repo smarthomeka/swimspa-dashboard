@@ -18,6 +18,11 @@ import {
   AlertTriangle,
   HardDrive,
   Info,
+  LogIn,
+  LogOut,
+  RefreshCw,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 
 type ProviderMeta = {
@@ -30,17 +35,6 @@ type ProviderMeta = {
 };
 
 const PROVIDERS: ProviderMeta[] = [
-  {
-    key: "gecko",
-    label: "Gecko in.Touch 2",
-    description: "Armstark Lotus 460 Controller — Wassertemperatur, Pumpenstatus",
-    icon: Thermometer,
-    accentColor: "#ef4444",
-    fields: [
-      { key: "apiUrl", label: "API URL", placeholder: "https://api.gecko.io" },
-      { key: "apiKey", label: "API Key", placeholder: "Dein Gecko API Key", secret: true },
-    ],
-  },
   {
     key: "labcom",
     label: "Labcom PoolLab",
@@ -80,6 +74,20 @@ type SettingsData = Record<
   { enabled: boolean; config: Record<string, string> }
 >;
 
+type GeckoStatus = {
+  authenticated: boolean;
+  connected: boolean;
+  vesselName: string | null;
+  monitorId: string | null;
+  lastState: {
+    temperatureZones: { temperature: number | null; setPoint: number | null; status: number }[];
+    flowZones: { active: boolean; speed: number | null }[];
+    connectivity: { gatewayStatus: string; vesselStatus: string };
+    lastUpdated: string;
+  } | null;
+  error: string | null;
+};
+
 type SystemInfo = {
   version: string;
   dbSizeBytes: number;
@@ -90,6 +98,156 @@ type SystemInfo = {
     dosingResponses: number;
   };
 };
+
+function GeckoCard({ geckoStatus, onRefreshStatus }: { geckoStatus: GeckoStatus | null; onRefreshStatus: () => void }) {
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  const handleLogin = useCallback(async () => {
+    setLoggingIn(true);
+    try {
+      const res = await fetch("/api/gecko/auth");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { url } = await res.json();
+      window.location.href = url;
+    } catch {
+      setLoggingIn(false);
+    }
+  }, []);
+
+  const handleSync = useCallback(async () => {
+    setSyncing(true);
+    try {
+      await fetch("/api/gecko/sync", { method: "POST" });
+      onRefreshStatus();
+    } finally {
+      setSyncing(false);
+    }
+  }, [onRefreshStatus]);
+
+  const handleDisconnect = useCallback(async () => {
+    setDisconnecting(true);
+    try {
+      await fetch("/api/gecko/disconnect", { method: "POST" });
+      onRefreshStatus();
+    } finally {
+      setDisconnecting(false);
+    }
+  }, [onRefreshStatus]);
+
+  const isConnected = geckoStatus?.connected ?? false;
+  const isAuthenticated = geckoStatus?.authenticated ?? false;
+  const temp = geckoStatus?.lastState?.temperatureZones?.[0]?.temperature;
+  const setPoint = geckoStatus?.lastState?.temperatureZones?.[0]?.setPoint;
+  const pumpActive = geckoStatus?.lastState?.flowZones?.some(f => f.active);
+
+  return (
+    <Card className={`card-glow relative overflow-hidden transition-all duration-300 ${isConnected ? "ring-1 ring-primary/20" : ""}`}>
+      {isConnected && (
+        <div
+          className="absolute top-0 left-0 right-0 h-[2px]"
+          style={{ background: "linear-gradient(90deg, #ef4444, transparent)" }}
+        />
+      )}
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div
+              className="flex h-10 w-10 items-center justify-center rounded-xl transition-colors"
+              style={{ backgroundColor: "#ef444412" }}
+            >
+              <Thermometer className="h-5 w-5" style={{ color: "#ef4444" }} />
+            </div>
+            <div>
+              <CardTitle className="text-base">Gecko in.Touch 2</CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {geckoStatus?.vesselName
+                  ? `${geckoStatus.vesselName} — Wassertemperatur, Pumpenstatus`
+                  : "Armstark Lotus 460 Controller — Wassertemperatur, Pumpenstatus"}
+              </p>
+            </div>
+          </div>
+          {isConnected ? (
+            <Wifi className="h-5 w-5 text-emerald-500" />
+          ) : isAuthenticated ? (
+            <WifiOff className="h-5 w-5 text-amber-500" />
+          ) : null}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 pt-0">
+        {geckoStatus?.error && (
+          <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3">
+            <p className="text-xs text-destructive">{geckoStatus.error}</p>
+          </div>
+        )}
+
+        {isConnected && geckoStatus?.lastState && (
+          <div className="grid grid-cols-3 gap-3 rounded-xl border border-border/50 bg-muted/30 p-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Temperatur</p>
+              <p className="text-lg font-semibold font-heading">
+                {temp != null ? `${temp.toFixed(1)}°C` : "–"}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Sollwert</p>
+              <p className="text-lg font-semibold font-heading">
+                {setPoint != null ? `${setPoint.toFixed(1)}°C` : "–"}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Pumpe</p>
+              <p className={`text-lg font-semibold font-heading ${pumpActive ? "text-emerald-500" : ""}`}>
+                {pumpActive ? "Aktiv" : "Aus"}
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          {!isAuthenticated ? (
+            <Button size="sm" onClick={handleLogin} disabled={loggingIn}>
+              {loggingIn ? (
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+              ) : (
+                <LogIn className="mr-1.5 h-4 w-4" />
+              )}
+              Mit Gecko anmelden
+            </Button>
+          ) : (
+            <>
+              <Button size="sm" onClick={handleSync} disabled={syncing}>
+                {syncing ? (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-1.5 h-4 w-4" />
+                )}
+                {isConnected ? "Aktualisieren" : "Verbinden"}
+              </Button>
+              {isConnected && (
+                <Button size="sm" variant="outline" onClick={handleDisconnect} disabled={disconnecting}>
+                  {disconnecting ? (
+                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                  ) : (
+                    <LogOut className="mr-1.5 h-4 w-4" />
+                  )}
+                  Trennen
+                </Button>
+              )}
+            </>
+          )}
+        </div>
+
+        {isConnected && geckoStatus?.lastState?.lastUpdated && (
+          <p className="text-[10px] text-muted-foreground">
+            Letzte Aktualisierung: {new Date(geckoStatus.lastState.lastUpdated).toLocaleString("de-DE")}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 function ProviderCard({
   meta,
@@ -222,6 +380,7 @@ export default function EinstellungenPage() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [seedSuccess, setSeedSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [geckoStatus, setGeckoStatus] = useState<GeckoStatus | null>(null);
 
   const loadSystemInfo = useCallback(() => {
     fetch("/api/system")
@@ -230,6 +389,16 @@ export default function EinstellungenPage() {
         return r.json();
       })
       .then(setSystemInfo)
+      .catch(() => {});
+  }, []);
+
+  const loadGeckoStatus = useCallback(() => {
+    fetch("/api/gecko/status")
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(setGeckoStatus)
       .catch(() => {});
   }, []);
 
@@ -243,9 +412,14 @@ export default function EinstellungenPage() {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       }),
-    ]).then(([settingsData, sysData]) => {
+      fetch("/api/gecko/status").then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      }).catch(() => null),
+    ]).then(([settingsData, sysData, geckoData]) => {
       setSettings(settingsData);
       setSystemInfo(sysData);
+      if (geckoData) setGeckoStatus(geckoData);
       setLoading(false);
     }).catch((err) => {
       setError(err.message ?? "Verbindungsfehler");
@@ -457,6 +631,7 @@ export default function EinstellungenPage() {
         )}
 
         <div className="grid gap-5">
+          <GeckoCard geckoStatus={geckoStatus} onRefreshStatus={loadGeckoStatus} />
           {PROVIDERS.map((meta) => (
             <ProviderCard
               key={meta.key}

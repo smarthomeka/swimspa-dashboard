@@ -3,7 +3,7 @@ import { apiSettings } from "./schema";
 import { eq } from "drizzle-orm";
 
 export type ProviderConfig = {
-  gecko: { apiUrl: string; apiKey: string };
+  gecko: Record<string, string>; // OAuth tokens + vessel info — managed by gecko service
   labcom: { apiUrl: string; apiKey: string };
   shelly: { host: string };
   blueconnect: { apiUrl: string; apiKey: string };
