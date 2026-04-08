@@ -5,8 +5,8 @@
  * persisting temperature and pump readings to the database.
  * Singleton — one poller per process.
  *
- * Communication uses the geckolib Python bridge (UDP port 10022) —
- * no cloud services, no OAuth.
+ * Communication uses a pure TypeScript UDP client (port 10022) —
+ * no cloud services, no OAuth, no Python.
  */
 
 import { readSpaState, type GeckoSpaReading } from "./api";
