@@ -62,7 +62,7 @@ export default function EnergyPage() {
         const [energyRes, powerRes] = await Promise.all([
           fetch(`/api/readings?type=energy&days=${days}`),
           fetch(
-            `/api/readings?type=history&source=shelly&metric=power_w&days=${Math.min(days, 7)}`
+            `/api/readings?type=history&source=shelly&metric=power_w&days=${days}`
           ),
         ]);
         if (!energyRes.ok || !powerRes.ok) throw new Error(`HTTP ${energyRes.status}`);
@@ -257,8 +257,7 @@ export default function EnergyPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <span className="h-2 w-2 rounded-full bg-red-500" />
-            Leistungsverlauf (Watt) — letzte{" "}
-            {Math.min(days, 7)} Tage
+            Leistungsverlauf (Watt) — letzte {days} Tage
           </CardTitle>
         </CardHeader>
         <CardContent>

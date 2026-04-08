@@ -43,8 +43,8 @@ export async function getDailyEnergyConsumption(since: Date) {
   return db
     .select({
       date: sql<string>`date(timestamp)`.as("date"),
-      maxKwh: sql<number>`max(value)`.as("max_kwh"),
-      minKwh: sql<number>`min(value)`.as("min_kwh"),
+      maxKwh: sql<number>`max(case when metric = 'energy_kwh' then value end)`.as("max_kwh"),
+      minKwh: sql<number>`min(case when metric = 'energy_kwh' then value end)`.as("min_kwh"),
       avgPowerW: sql<number>`avg(case when metric = 'power_w' then value end)`.as("avg_power_w"),
     })
     .from(sensorReadings)
