@@ -5,6 +5,7 @@ import { getAllSettings } from "@/lib/db/settings";
 import { labcomService } from "@/lib/labcom/service";
 import { shellyService } from "@/lib/shelly/service";
 import { geckoService } from "@/lib/gecko/service";
+import type { Tariff, TariffConfig } from "@/app/api/tariffs/route";
 
 let seeded = false;
 let servicesStarted = false;
@@ -75,5 +76,69 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(data);
   }
 
+  if (type === "energy-costs") {
+    const days = parseInt(searchParams.get("days") ?? "30", 10);
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    // Fetch tariff config
+    let tariffConfig: TariffConfig;
+    try {
+      const tariffRes = await fetch(new URL("/api/tariffs", request.url));
+      tariffConfig = await tariffRes.json();
+    } catch {
+      tariffConfig = {
+        tariffs: [{ name: "Standard", pricePerKwh: 0.3, startHour: 0, endHour: 0 }],
+      };
+    }
+
+    // Fetch power_w readings with timestamps
+    const readings = await getReadings("shelly", "power_w", since, 100000);
+
+    // Compute cost per tariff by integrating power over time
+    const tariffCosts: Record<string, { name: string; kwh: number; cost: number; pricePerKwh: number }> = {};
+    for (const t of tariffConfig.tariffs) {
+      tariffCosts[t.name] = { name: t.name, kwh: 0, cost: 0, pricePerKwh: t.pricePerKwh };
+    }
+
+    for (let i = 1; i < readings.length; i++) {
+      const prev = readings[i - 1];
+      const curr = readings[i];
+      const dtMs = new Date(curr.timestamp).getTime() - new Date(prev.timestamp).getTime();
+      if (dtMs <= 0 || dtMs > 3600_000) continue; // skip gaps > 1h
+
+      const avgPowerW = (prev.value + curr.value) / 2;
+      const kwh = (avgPowerW * dtMs) / (1000 * 3600_000);
+      const hour = new Date(prev.timestamp).getHours();
+
+      const tariff = findTariffForHour(tariffConfig.tariffs, hour);
+      const key = tariff.name;
+      if (!tariffCosts[key]) {
+        tariffCosts[key] = { name: key, kwh: 0, cost: 0, pricePerKwh: tariff.pricePerKwh };
+      }
+      tariffCosts[key].kwh += kwh;
+      tariffCosts[key].cost += kwh * tariff.pricePerKwh;
+    }
+
+    const breakdown = Object.values(tariffCosts);
+    const totalKwh = breakdown.reduce((s, b) => s + b.kwh, 0);
+    const totalCost = breakdown.reduce((s, b) => s + b.cost, 0);
+
+    return NextResponse.json({ totalKwh, totalCost, breakdown, tariffs: tariffConfig.tariffs });
+  }
+
   return NextResponse.json({ error: "Unknown type" }, { status: 400 });
+}
+
+function findTariffForHour(tariffs: Tariff[], hour: number): Tariff {
+  for (const t of tariffs) {
+    if (t.startHour === t.endHour) return t; // single tariff covers all hours
+    if (t.startHour < t.endHour) {
+      if (hour >= t.startHour && hour < t.endHour) return t;
+    } else {
+      // wraps midnight, e.g. 22:00-06:00
+      if (hour >= t.startHour || hour < t.endHour) return t;
+    }
+  }
+  return tariffs[0];
 }

@@ -22,6 +22,10 @@ import {
   RefreshCw,
   Wifi,
   WifiOff,
+  Receipt,
+  Plus,
+  X,
+  Clock,
 } from "lucide-react";
 
 type ProviderMeta = {
@@ -479,6 +483,206 @@ function ProviderCard({
   );
 }
 
+type Tariff = {
+  name: string;
+  pricePerKwh: number;
+  startHour: number;
+  endHour: number;
+};
+
+function TariffSection() {
+  const [tariffs, setTariffs] = useState<Tariff[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/tariffs")
+      .then((r) => r.json())
+      .then((data) => {
+        setTariffs(data.tariffs ?? []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const res = await fetch("/api/tariffs", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tariffs }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error ?? "Fehler beim Speichern");
+      } else {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      }
+    } catch {
+      setError("Verbindungsfehler");
+    } finally {
+      setSaving(false);
+    }
+  }, [tariffs]);
+
+  const addTariff = useCallback(() => {
+    setTariffs((prev) => [
+      ...prev,
+      { name: "", pricePerKwh: 0.3, startHour: 0, endHour: 0 },
+    ]);
+  }, []);
+
+  const removeTariff = useCallback((index: number) => {
+    setTariffs((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const updateTariff = useCallback(
+    (index: number, field: keyof Tariff, value: string | number) => {
+      setTariffs((prev) =>
+        prev.map((t, i) => (i === index ? { ...t, [field]: value } : t))
+      );
+    },
+    []
+  );
+
+  if (loading) return null;
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center gap-2">
+        <Receipt className="h-5 w-5 text-primary" />
+        <h2 className="font-heading text-xl font-semibold">Stromtarife</h2>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        Konfiguriere Strompreise pro kWh und Zeitfenster (z.B. Hochtarif / Niedertarif).
+        Die Kostenberechnung auf der Energieseite verwendet diese Tarife.
+      </p>
+
+      <div className="space-y-3">
+        {tariffs.map((tariff, i) => (
+          <Card key={i} className="card-glow relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-emerald-500 to-transparent" />
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="grid gap-3 flex-1 sm:grid-cols-2 lg:grid-cols-4">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Tarifname
+                    </label>
+                    <input
+                      type="text"
+                      value={tariff.name}
+                      onChange={(e) => updateTariff(i, "name", e.target.value)}
+                      placeholder="z.B. Hochtarif (HT)"
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Preis (EUR/kWh)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={tariff.pricePerKwh}
+                      onChange={(e) =>
+                        updateTariff(i, "pricePerKwh", parseFloat(e.target.value) || 0)
+                      }
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground tabular-nums focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      <Clock className="inline h-3 w-3 mr-1" />
+                      Von (Stunde)
+                    </label>
+                    <select
+                      value={tariff.startHour}
+                      onChange={(e) =>
+                        updateTariff(i, "startHour", parseInt(e.target.value))
+                      }
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-all"
+                    >
+                      {Array.from({ length: 24 }, (_, h) => (
+                        <option key={h} value={h}>
+                          {String(h).padStart(2, "0")}:00
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      <Clock className="inline h-3 w-3 mr-1" />
+                      Bis (Stunde)
+                    </label>
+                    <select
+                      value={tariff.endHour}
+                      onChange={(e) =>
+                        updateTariff(i, "endHour", parseInt(e.target.value))
+                      }
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-all"
+                    >
+                      {Array.from({ length: 24 }, (_, h) => (
+                        <option key={h} value={h}>
+                          {String(h).padStart(2, "0")}:00
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                {tariffs.length > 1 && (
+                  <button
+                    onClick={() => removeTariff(i)}
+                    className="mt-6 shrink-0 rounded-lg p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    title="Tarif entfernen"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+              {tariff.startHour === tariff.endHour && (
+                <p className="mt-2 text-[10px] text-muted-foreground">
+                  Gleiche Start- und Endzeit = gilt ganztägig (24h)
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {error && (
+        <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3">
+          <p className="text-xs text-destructive">{error}</p>
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={addTariff}>
+          <Plus className="mr-1.5 h-4 w-4" />
+          Tarif hinzufügen
+        </Button>
+        <Button size="sm" onClick={handleSave} disabled={saving || tariffs.length === 0}>
+          {saving ? (
+            <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+          ) : saved ? (
+            <Check className="mr-1.5 h-4 w-4" />
+          ) : (
+            <Save className="mr-1.5 h-4 w-4" />
+          )}
+          {saved ? "Gespeichert" : "Tarife speichern"}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
   const units = ["B", "KB", "MB", "GB"];
@@ -773,6 +977,9 @@ export default function EinstellungenPage() {
           ))}
         </div>
       </section>
+
+      {/* ── Section: Stromtarife ── */}
+      <TariffSection />
 
       {/* ── Section: System ── */}
       <section className="space-y-4">

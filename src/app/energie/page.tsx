@@ -29,6 +29,19 @@ interface Reading {
   timestamp: string;
 }
 
+interface TariffBreakdown {
+  name: string;
+  kwh: number;
+  cost: number;
+  pricePerKwh: number;
+}
+
+interface EnergyCosts {
+  totalKwh: number;
+  totalCost: number;
+  breakdown: TariffBreakdown[];
+}
+
 function formatDateLabel(d: string) {
   const dt = new Date(d);
   return dt.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
@@ -54,20 +67,23 @@ export default function EnergyPage() {
     Array<{ date: string; kwh: number; avgW: number }>
   >([]);
   const [powerData, setPowerData] = useState<Reading[]>([]);
+  const [costData, setCostData] = useState<EnergyCosts | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
       try {
-        const [energyRes, powerRes] = await Promise.all([
+        const [energyRes, powerRes, costRes] = await Promise.all([
           fetch(`/api/readings?type=energy&days=${days}`),
           fetch(
             `/api/readings?type=history&source=shelly&metric=power_w&days=${days}`
           ),
+          fetch(`/api/readings?type=energy-costs&days=${days}`),
         ]);
         if (!energyRes.ok || !powerRes.ok) throw new Error(`HTTP ${energyRes.status}`);
         const energy: EnergyDay[] = await energyRes.json();
         setPowerData(await powerRes.json());
+        if (costRes.ok) setCostData(await costRes.json());
 
         const daily = energy.map((d, i) => ({
           date: d.date,
@@ -88,7 +104,7 @@ export default function EnergyPage() {
 
   const totalKwh = dailyData.reduce((sum, d) => sum + d.kwh, 0);
   const avgDaily = dailyData.length > 0 ? totalKwh / dailyData.length : 0;
-  const totalCost = totalKwh * 0.3;
+  const totalCost = costData?.totalCost ?? totalKwh * 0.3;
 
   const gridStroke = "oklch(0.88 0.005 185)";
   const tickFill = "oklch(0.48 0.02 185)";
@@ -177,9 +193,20 @@ export default function EnergyPage() {
               {totalCost.toFixed(0).replace(".", ",")}
             </span>
             <span className="ml-1.5 text-base font-medium text-muted-foreground">EUR</span>
-            <p className="text-[11px] font-medium text-muted-foreground mt-1">
-              bei 0,30 EUR/kWh
-            </p>
+            {costData?.breakdown && costData.breakdown.length > 0 ? (
+              <div className="mt-1.5 space-y-0.5">
+                {costData.breakdown.map((b) => (
+                  <p key={b.name} className="text-[11px] font-medium text-muted-foreground">
+                    {b.name}: {b.kwh.toFixed(1).replace(".", ",")} kWh
+                    {" "}({(b.pricePerKwh * 100).toFixed(0)} ct/kWh = {b.cost.toFixed(2).replace(".", ",")} EUR)
+                  </p>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[11px] font-medium text-muted-foreground mt-1">
+                bei 0,30 EUR/kWh (Standard)
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
