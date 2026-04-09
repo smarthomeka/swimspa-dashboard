@@ -15,10 +15,17 @@ import packsData from "./packs.json";
 
 const INTOUCH2_PORT = 10022;
 const MESSAGE_ENCODING = "latin1" as const;
-const CLIENT_ID = "SW1M5P4-D45HB04RD";
 const PROTOCOL_TIMEOUT_MS = 4_000;
 const DISCOVERY_TIMEOUT_MS = 8_000;
 const CONNECTION_TIMEOUT_MS = 30_000;
+
+/** Generate a geckolib-compatible client identifier: IOS1<8 hex chars> */
+function generateClientId(): string {
+  const hex = Array.from({ length: 8 }, () =>
+    Math.floor(Math.random() * 16).toString(16).toUpperCase()
+  ).join("");
+  return `IOS1${hex}`;
+}
 
 // ── PACKT framing ────────────────────────────────────────────────
 
@@ -196,7 +203,7 @@ export async function discoverSpas(
   await transport.open();
 
   try {
-    const clientId = `IOS${CLIENT_ID}`;
+    const clientId = generateClientId();
     // Build HELLO broadcast
     const helloData = wrapXml("HELLO", Buffer.from("1"));
     const packet = buildPacket(clientId, "", helloData);
@@ -263,7 +270,7 @@ export async function readSpaState(host: string): Promise<SpaReading> {
 
   try {
     // Step 1: HELLO — locate the spa
-    const clientId = `IOS${CLIENT_ID}`;
+    const clientId = generateClientId();
     const helloData = wrapXml("HELLO", Buffer.from("1"));
     const helloPacket = buildPacket(clientId, "", helloData);
 
@@ -275,7 +282,7 @@ export async function readSpaState(host: string): Promise<SpaReading> {
         const timer = setTimeout(() => {
           transport.removeHandler(handler);
           resolve(null);
-        }, 8_000);
+        }, 10_000);
 
         const handler: MessageHandler = (msg, rinfo) => {
           if (rinfo.address !== host) return;
@@ -297,21 +304,28 @@ export async function readSpaState(host: string): Promise<SpaReading> {
 
         transport.addHandler(handler);
 
-        // Send hello multiple times
-        for (let i = 0; i < 3; i++) {
+        // Send HELLO to both unicast (target IP) and broadcast.
+        // Some Gecko devices only respond to broadcast HELLO.
+        const targets = [host, "255.255.255.255"];
+        for (let i = 0; i < 4; i++) {
           setTimeout(() => {
-            try {
-              transport.send(helloPacket, INTOUCH2_PORT, host);
-            } catch {
-              /* socket may be closed */
+            for (const addr of targets) {
+              try {
+                transport.send(helloPacket, INTOUCH2_PORT, addr);
+              } catch {
+                /* socket may be closed */
+              }
             }
-          }, i * 1000);
+          }, i * 1500);
         }
       }
     );
 
     if (!helloResult) {
-      throw new Error(`No spa found at ${host}`);
+      throw new Error(
+        `Kein Spa gefunden unter ${host} — Gerät nicht erreichbar auf UDP-Port ${INTOUCH2_PORT}. ` +
+        `Bitte prüfen: (1) IP-Adresse korrekt? (2) Gerät eingeschaltet? (3) Gleiche Netzwerk-Segment?`
+      );
     }
     spaId = helloResult.spaId;
     spaName = helloResult.spaName;
@@ -679,6 +693,128 @@ function parseStatusBlock(
     lights,
     watercare,
   };
+}
+
+// ── Diagnostics ─────────────────────────────────────────────────
+
+export type DiagnosticStep = {
+  step: string;
+  status: "ok" | "fail" | "skip";
+  detail: string;
+  durationMs: number;
+};
+
+export type DiagnosticResult = {
+  host: string;
+  steps: DiagnosticStep[];
+  success: boolean;
+};
+
+/**
+ * Run a step-by-step connection diagnostic against a Gecko device.
+ * Returns detailed results for each protocol phase.
+ */
+export async function diagnoseSpa(host: string): Promise<DiagnosticResult> {
+  const steps: DiagnosticStep[] = [];
+  const transport = new UdpTransport();
+
+  // Step 1: Open UDP socket
+  let t0 = Date.now();
+  try {
+    await transport.open();
+    steps.push({ step: "udp_socket", status: "ok", detail: "UDP-Socket geöffnet", durationMs: Date.now() - t0 });
+  } catch (err) {
+    steps.push({ step: "udp_socket", status: "fail", detail: `Socket-Fehler: ${err instanceof Error ? err.message : err}`, durationMs: Date.now() - t0 });
+    return { host, steps, success: false };
+  }
+
+  // Step 2: Send HELLO (unicast + broadcast), wait for response
+  t0 = Date.now();
+  const clientId = generateClientId();
+  const helloData = wrapXml("HELLO", Buffer.from("1"));
+  const helloPacket = buildPacket(clientId, "", helloData);
+
+  let helloResponse: string | null = null;
+  let responseSource: string | null = null;
+
+  try {
+    const result = await new Promise<{ text: string; from: string } | null>((resolve) => {
+      const timer = setTimeout(() => {
+        transport.removeHandler(handler);
+        resolve(null);
+      }, 10_000);
+
+      const handler: MessageHandler = (msg, rinfo) => {
+        const parsed = parsePacket(msg);
+        if (!parsed) return;
+        const content = unwrapXml("HELLO", parsed.data);
+        if (!content) return;
+        const text = content.toString(MESSAGE_ENCODING);
+        if (text === "1" || text.startsWith("IOS") || text.startsWith("AND")) return;
+        clearTimeout(timer);
+        transport.removeHandler(handler);
+        resolve({ text, from: rinfo.address });
+      };
+
+      transport.addHandler(handler);
+
+      // Send to both unicast and broadcast
+      const targets = [host, "255.255.255.255"];
+      for (let i = 0; i < 3; i++) {
+        setTimeout(() => {
+          for (const addr of targets) {
+            try { transport.send(helloPacket, INTOUCH2_PORT, addr); } catch { /* */ }
+          }
+        }, i * 1500);
+      }
+    });
+
+    if (result) {
+      helloResponse = result.text;
+      responseSource = result.from;
+      const matchesHost = result.from === host;
+      steps.push({
+        step: "hello",
+        status: "ok",
+        detail: `Antwort von ${result.from}: "${result.text}"${matchesHost ? "" : ` (WARNUNG: erwartet ${host})`}`,
+        durationMs: Date.now() - t0,
+      });
+    } else {
+      steps.push({
+        step: "hello",
+        status: "fail",
+        detail: `Keine Antwort nach 10s (UDP-Port ${INTOUCH2_PORT}). Gerät nicht erreichbar oder falsches Netzwerk-Segment.`,
+        durationMs: Date.now() - t0,
+      });
+      transport.close();
+      return { host, steps, success: false };
+    }
+  } catch (err) {
+    steps.push({ step: "hello", status: "fail", detail: `HELLO-Fehler: ${err instanceof Error ? err.message : err}`, durationMs: Date.now() - t0 });
+    transport.close();
+    return { host, steps, success: false };
+  }
+
+  // Step 3: Try AVERS (version exchange)
+  const spaId = helloResponse!.split("|")[0];
+  t0 = Date.now();
+  try {
+    const seq = new SequenceCounter();
+    const aversData = Buffer.alloc(6);
+    aversData.write("AVERS", 0, MESSAGE_ENCODING);
+    aversData.writeUInt8(seq.next(), 5);
+    const aversPacket = buildPacket(clientId, spaId, aversData);
+
+    await exchange(transport, aversPacket, INTOUCH2_PORT, responseSource!, "SVERS", PROTOCOL_TIMEOUT_MS);
+    steps.push({ step: "version", status: "ok", detail: "Firmware-Version empfangen", durationMs: Date.now() - t0 });
+  } catch (err) {
+    steps.push({ step: "version", status: "fail", detail: `AVERS fehlgeschlagen: ${err instanceof Error ? err.message : err}`, durationMs: Date.now() - t0 });
+    transport.close();
+    return { host, steps, success: false };
+  }
+
+  transport.close();
+  return { host, steps, success: steps.every((s) => s.status === "ok") };
 }
 
 // ── Utility ──────────────────────────────────────────────────────

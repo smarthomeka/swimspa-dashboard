@@ -171,6 +171,8 @@ function ProviderCard({
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncSuccess, setSyncSuccess] = useState(false);
   const [providerStatus, setProviderStatus] = useState<ProviderStatus | null>(null);
+  const [diagnosing, setDiagnosing] = useState(false);
+  const [diagnoseResult, setDiagnoseResult] = useState<{ steps: { step: string; status: string; detail: string; durationMs: number }[]; success: boolean } | null>(null);
 
   const isGecko = meta.key === "gecko";
   const syncEndpoint = isGecko ? "/api/gecko/sync" : meta.key === "labcom" ? "/api/labcom/sync" : meta.key === "shelly" ? "/api/shelly/sync" : null;
@@ -210,6 +212,25 @@ function ProviderCard({
       setSyncing(false);
     }
   }, [syncEndpoint, statusEndpoint]);
+
+  const handleDiagnose = useCallback(async () => {
+    setDiagnosing(true);
+    setDiagnoseResult(null);
+    try {
+      const res = await fetch("/api/gecko/diagnose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host: data.config.host }),
+      });
+      const json = await res.json();
+      if (json.steps) setDiagnoseResult(json);
+      else setSyncError(json.error ?? "Diagnose fehlgeschlagen");
+    } catch (err: any) {
+      setSyncError(err.message ?? "Diagnose fehlgeschlagen");
+    } finally {
+      setDiagnosing(false);
+    }
+  }, [data.config.host]);
 
   return (
     <Card className={`card-glow relative overflow-hidden transition-all duration-300 ${data.enabled ? "ring-1 ring-primary/20" : ""}`}>
@@ -341,7 +362,40 @@ function ProviderCard({
                 {syncing ? "Synchronisiere..." : providerStatus?.polling ? "Aktualisieren" : "Verbinden"}
               </Button>
             )}
+            {isGecko && data.config.host && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleDiagnose}
+                disabled={diagnosing}
+              >
+                {diagnosing ? (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                ) : (
+                  <Info className="mr-1.5 h-4 w-4" />
+                )}
+                {diagnosing ? "Prüfe..." : "Diagnose"}
+              </Button>
+            )}
           </div>
+
+          {diagnoseResult && (
+            <div className="rounded-xl border border-border/50 bg-muted/30 p-3 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Verbindungsdiagnose</p>
+              {diagnoseResult.steps.map((s, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs">
+                  <span className={s.status === "ok" ? "text-emerald-500" : "text-destructive"}>
+                    {s.status === "ok" ? "✓" : "✗"}
+                  </span>
+                  <span className="text-muted-foreground flex-1">{s.detail}</span>
+                  <span className="text-muted-foreground/60 tabular-nums">{s.durationMs}ms</span>
+                </div>
+              ))}
+              <p className={`text-xs font-medium ${diagnoseResult.success ? "text-emerald-500" : "text-destructive"}`}>
+                {diagnoseResult.success ? "Verbindung erfolgreich" : "Verbindung fehlgeschlagen"}
+              </p>
+            </div>
+          )}
         </CardContent>
       )}
     </Card>
