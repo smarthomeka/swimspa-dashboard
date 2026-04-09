@@ -9,6 +9,8 @@
  */
 
 import dgram from "node:dgram";
+import net from "node:net";
+import { networkInterfaces } from "node:os";
 import packsData from "./packs.json";
 
 // ── Constants ────────────────────────────────────────────────────
@@ -710,16 +712,101 @@ export type DiagnosticResult = {
   success: boolean;
 };
 
+/** Get local network interfaces for diagnostics. */
+function getLocalNetworkInfo(): { ip: string; subnet: string }[] {
+  const interfaces = networkInterfaces();
+  const results: { ip: string; subnet: string }[] = [];
+  for (const [, addrs] of Object.entries(interfaces)) {
+    if (!addrs) continue;
+    for (const addr of addrs) {
+      if (addr.family === "IPv4" && !addr.internal) {
+        results.push({ ip: addr.address, subnet: addr.netmask });
+      }
+    }
+  }
+  return results;
+}
+
+/** Check if two IPs are on the same subnet. */
+function sameSubnet(ip1: string, ip2: string, netmask: string): boolean {
+  const p1 = ip1.split(".").map(Number);
+  const p2 = ip2.split(".").map(Number);
+  const m = netmask.split(".").map(Number);
+  return p1.every((_, i) => (p1[i] & m[i]) === (p2[i] & m[i]));
+}
+
+/** Try to reach a host via TCP (basic reachability check). */
+async function tcpProbe(host: string, port: number, timeoutMs: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    const timer = setTimeout(() => {
+      socket.destroy();
+      resolve(false);
+    }, timeoutMs);
+    socket.connect(port, host, () => {
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(true);
+    });
+    socket.on("error", () => {
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(false);
+    });
+  });
+}
+
 /**
  * Run a step-by-step connection diagnostic against a Gecko device.
  * Returns detailed results for each protocol phase.
  */
 export async function diagnoseSpa(host: string): Promise<DiagnosticResult> {
   const steps: DiagnosticStep[] = [];
+
+  // Step 0: Network analysis — check if host is on same subnet
+  let t0 = Date.now();
+  const localNets = getLocalNetworkInfo();
+  const onSameSubnet = localNets.some((n) => sameSubnet(n.ip, host, n.subnet));
+  const localIps = localNets.map((n) => n.ip).join(", ");
+  steps.push({
+    step: "network",
+    status: onSameSubnet ? "ok" : "fail",
+    detail: onSameSubnet
+      ? `Dashboard (${localIps}) und Gecko (${host}) im gleichen Subnetz`
+      : `Dashboard (${localIps}) und Gecko (${host}) in VERSCHIEDENEN Subnetzen — UDP wird blockiert. Dashboard und Gecko müssen im gleichen Netzwerk-Segment sein.`,
+    durationMs: Date.now() - t0,
+  });
+
+  // Step 0b: Try TCP probe on common ports (80 for HTTP, 10022 for gecko)
+  t0 = Date.now();
+  const httpReachable = await tcpProbe(host, 80, 3_000);
+  const geckoPortReachable = await tcpProbe(host, INTOUCH2_PORT, 3_000);
+  const probeDetail = [
+    `HTTP (Port 80): ${httpReachable ? "erreichbar" : "nicht erreichbar"}`,
+    `Gecko (Port ${INTOUCH2_PORT}): ${geckoPortReachable ? "TCP erreichbar" : "nicht erreichbar"}`,
+  ].join(", ");
+  steps.push({
+    step: "reachability",
+    status: httpReachable || geckoPortReachable ? "ok" : "fail",
+    detail: probeDetail,
+    durationMs: Date.now() - t0,
+  });
+
+  // If not on same subnet and no port reachable, skip UDP test
+  if (!onSameSubnet && !httpReachable && !geckoPortReachable) {
+    steps.push({
+      step: "hello",
+      status: "skip",
+      detail: `UDP-Test übersprungen — Host nicht erreichbar. Prüfen: (1) IP korrekt? (2) Dashboard und Gecko im gleichen VLAN/Subnetz?`,
+      durationMs: 0,
+    });
+    return { host, steps, success: false };
+  }
+
   const transport = new UdpTransport();
 
   // Step 1: Open UDP socket
-  let t0 = Date.now();
+  t0 = Date.now();
   try {
     await transport.open();
     steps.push({ step: "udp_socket", status: "ok", detail: "UDP-Socket geöffnet", durationMs: Date.now() - t0 });
@@ -783,7 +870,7 @@ export async function diagnoseSpa(host: string): Promise<DiagnosticResult> {
       steps.push({
         step: "hello",
         status: "fail",
-        detail: `Keine Antwort nach 10s (UDP-Port ${INTOUCH2_PORT}). Gerät nicht erreichbar oder falsches Netzwerk-Segment.`,
+        detail: `Keine Antwort nach 10s auf UDP-Port ${INTOUCH2_PORT}. ${!onSameSubnet ? "Ursache: unterschiedliche Subnetze (s.o.)." : "Gerät antwortet nicht auf Gecko-Protokoll."}`,
         durationMs: Date.now() - t0,
       });
       transport.close();
