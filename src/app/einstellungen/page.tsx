@@ -18,10 +18,7 @@ import {
   AlertTriangle,
   HardDrive,
   Info,
-  LogOut,
   RefreshCw,
-  Wifi,
-  WifiOff,
   Receipt,
   Plus,
   X,
@@ -38,6 +35,16 @@ type ProviderMeta = {
 };
 
 const PROVIDERS: ProviderMeta[] = [
+  {
+    key: "gecko",
+    label: "Gecko in.Touch 2",
+    description: "Lokale Verbindung — Wassertemperatur, Pumpenstatus",
+    icon: Thermometer,
+    accentColor: "#ef4444",
+    fields: [
+      { key: "host", label: "IP-Adresse", placeholder: "z.B. 192.168.1.50 oder 10.10.20.241" },
+    ],
+  },
   {
     key: "labcom",
     label: "Labcom PoolLab",
@@ -92,6 +99,8 @@ type GeckoStatus = {
   error: string | null;
 };
 
+type GeckoStatusProps = { geckoStatus: GeckoStatus | null };
+
 type SystemInfo = {
   version: string;
   dbSizeBytes: number;
@@ -103,196 +112,41 @@ type SystemInfo = {
   };
 };
 
-function GeckoCard({ geckoStatus, onRefreshStatus }: { geckoStatus: GeckoStatus | null; onRefreshStatus: () => void }) {
-  const [connecting, setConnecting] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [disconnecting, setDisconnecting] = useState(false);
-  const [connectError, setConnectError] = useState<string | null>(null);
-  const [host, setHost] = useState("");
-
-  const handleConnect = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    setConnecting(true);
-    setConnectError(null);
-    try {
-      const res = await fetch("/api/gecko/connect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ host }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setConnectError(data.error ?? "Verbindung fehlgeschlagen");
-        return;
-      }
-      onRefreshStatus();
-    } catch {
-      setConnectError("Verbindungsfehler");
-    } finally {
-      setConnecting(false);
-    }
-  }, [host, onRefreshStatus]);
-
-  const handleSync = useCallback(async () => {
-    setSyncing(true);
-    try {
-      await fetch("/api/gecko/sync", { method: "POST" });
-      onRefreshStatus();
-    } finally {
-      setSyncing(false);
-    }
-  }, [onRefreshStatus]);
-
-  const handleDisconnect = useCallback(async () => {
-    setDisconnecting(true);
-    try {
-      await fetch("/api/gecko/disconnect", { method: "POST" });
-      onRefreshStatus();
-    } finally {
-      setDisconnecting(false);
-    }
-  }, [onRefreshStatus]);
-
-  const isConfigured = geckoStatus?.configured ?? false;
-  const isPolling = geckoStatus?.polling ?? false;
-  const temp = geckoStatus?.lastReading?.temperature;
-  const setPoint = geckoStatus?.lastReading?.setPoint;
-  const pumpActive = geckoStatus?.lastReading?.pumps?.some(p => p.active);
-
-  return (
-    <Card className={`card-glow relative overflow-hidden transition-all duration-300 ${isPolling ? "ring-1 ring-primary/20" : ""}`}>
-      {isPolling && (
-        <div
-          className="absolute top-0 left-0 right-0 h-[2px]"
-          style={{ background: "linear-gradient(90deg, #ef4444, transparent)" }}
-        />
-      )}
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div
-              className="flex h-10 w-10 items-center justify-center rounded-xl transition-colors"
-              style={{ backgroundColor: "#ef444412" }}
-            >
-              <Thermometer className="h-5 w-5" style={{ color: "#ef4444" }} />
-            </div>
-            <div>
-              <CardTitle className="text-base">Gecko in.Touch 2</CardTitle>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {geckoStatus?.spaName
-                  ? `${geckoStatus.spaName} — Wassertemperatur, Pumpenstatus`
-                  : "Lokale Verbindung — Wassertemperatur, Pumpenstatus"}
-              </p>
-            </div>
-          </div>
-          {isPolling ? (
-            <Wifi className="h-5 w-5 text-emerald-500" />
-          ) : isConfigured ? (
-            <WifiOff className="h-5 w-5 text-amber-500" />
-          ) : null}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3 pt-0">
-        {geckoStatus?.error && (
-          <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3">
-            <p className="text-xs text-destructive">{geckoStatus.error}</p>
-          </div>
-        )}
-
-        {isPolling && geckoStatus?.lastReading && (
-          <div className="grid grid-cols-3 gap-3 rounded-xl border border-border/50 bg-muted/30 p-3">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Temperatur</p>
-              <p className="text-lg font-semibold font-heading">
-                {temp != null ? `${temp.toFixed(1)}°C` : "–"}
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Sollwert</p>
-              <p className="text-lg font-semibold font-heading">
-                {setPoint != null ? `${setPoint.toFixed(1)}°C` : "–"}
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Pumpe</p>
-              <p className={`text-lg font-semibold font-heading ${pumpActive ? "text-emerald-500" : ""}`}>
-                {pumpActive ? "Aktiv" : "Aus"}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {!isConfigured && (
-          <form onSubmit={handleConnect} className="space-y-2">
-            {connectError && (
-              <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3">
-                <p className="text-xs text-destructive">{connectError}</p>
-              </div>
-            )}
-            <div>
-              <input
-                type="text"
-                placeholder="IP-Adresse (z.B. 192.168.1.50)"
-                value={host}
-                onChange={(e) => setHost(e.target.value)}
-                required
-                pattern="^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"
-                className="w-full rounded-lg border border-border/50 bg-muted/30 px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
-              />
-            </div>
-            <Button size="sm" type="submit" disabled={connecting}>
-              {connecting ? (
-                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-              ) : (
-                <Wifi className="mr-1.5 h-4 w-4" />
-              )}
-              Verbinden
-            </Button>
-          </form>
-        )}
-
-        <div className="flex flex-wrap gap-2">
-          {isConfigured && (
-            <>
-              <Button size="sm" onClick={handleSync} disabled={syncing}>
-                {syncing ? (
-                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="mr-1.5 h-4 w-4" />
-                )}
-                Aktualisieren
-              </Button>
-              {isPolling && (
-                <Button size="sm" variant="outline" onClick={handleDisconnect} disabled={disconnecting}>
-                  {disconnecting ? (
-                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                  ) : (
-                    <LogOut className="mr-1.5 h-4 w-4" />
-                  )}
-                  Trennen
-                </Button>
-              )}
-            </>
-          )}
-        </div>
-
-        {isConfigured && geckoStatus?.host && (
-          <p className="text-[10px] text-muted-foreground">
-            Verbunden mit {geckoStatus.host}
-            {geckoStatus.lastSyncAt && ` — Letzte Aktualisierung: ${new Date(geckoStatus.lastSyncAt).toLocaleString("de-DE")}`}
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
 type ProviderStatus = {
   configured: boolean;
   polling: boolean;
   lastSyncAt: string | null;
   error: string | null;
 };
+
+function GeckoStatusDisplay({ geckoStatus }: GeckoStatusProps) {
+  if (!geckoStatus?.polling || !geckoStatus.lastReading) return null;
+  const temp = geckoStatus.lastReading.temperature;
+  const setPoint = geckoStatus.lastReading.setPoint;
+  const pumpActive = geckoStatus.lastReading.pumps?.some(p => p.active);
+  return (
+    <div className="grid grid-cols-3 gap-3 rounded-xl border border-border/50 bg-muted/30 p-3">
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Temperatur</p>
+        <p className="text-lg font-semibold font-heading">
+          {temp != null ? `${temp.toFixed(1)}°C` : "–"}
+        </p>
+      </div>
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Sollwert</p>
+        <p className="text-lg font-semibold font-heading">
+          {setPoint != null ? `${setPoint.toFixed(1)}°C` : "–"}
+        </p>
+      </div>
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Pumpe</p>
+        <p className={`text-lg font-semibold font-heading ${pumpActive ? "text-emerald-500" : ""}`}>
+          {pumpActive ? "Aktiv" : "Aus"}
+        </p>
+      </div>
+    </div>
+  );
+}
 
 function ProviderCard({
   meta,
@@ -301,6 +155,7 @@ function ProviderCard({
   onSave,
   saving,
   saved,
+  geckoStatus,
 }: {
   meta: ProviderMeta;
   data: { enabled: boolean; config: Record<string, string> };
@@ -308,6 +163,7 @@ function ProviderCard({
   onSave: (provider: string) => void;
   saving: boolean;
   saved: boolean;
+  geckoStatus?: GeckoStatus | null;
 }) {
   const Icon = meta.icon;
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
@@ -316,8 +172,9 @@ function ProviderCard({
   const [syncSuccess, setSyncSuccess] = useState(false);
   const [providerStatus, setProviderStatus] = useState<ProviderStatus | null>(null);
 
-  const syncEndpoint = meta.key === "labcom" ? "/api/labcom/sync" : meta.key === "shelly" ? "/api/shelly/sync" : null;
-  const statusEndpoint = meta.key === "labcom" ? "/api/labcom/status" : null;
+  const isGecko = meta.key === "gecko";
+  const syncEndpoint = isGecko ? "/api/gecko/sync" : meta.key === "labcom" ? "/api/labcom/sync" : meta.key === "shelly" ? "/api/shelly/sync" : null;
+  const statusEndpoint = isGecko ? "/api/gecko/status" : meta.key === "labcom" ? "/api/labcom/status" : null;
 
   // Load status on mount if enabled
   useEffect(() => {
@@ -428,6 +285,14 @@ function ProviderCard({
               </div>
             </div>
           ))}
+          {isGecko && geckoStatus && <GeckoStatusDisplay geckoStatus={geckoStatus} />}
+
+          {(isGecko && geckoStatus?.error) && (
+            <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3">
+              <p className="text-xs text-destructive">{geckoStatus.error}</p>
+            </div>
+          )}
+
           {syncError && (
             <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3">
               <p className="text-xs text-destructive">{syncError}</p>
@@ -777,18 +642,27 @@ export default function EinstellungenPage() {
       setSavedProvider(provider);
       setTimeout(() => setSavedProvider(null), 2000);
 
-      // Auto-trigger sync after saving if provider is enabled and has config
+      // Auto-trigger sync/connect after saving if provider is enabled
       if (s.enabled) {
-        const syncUrl =
-          provider === "labcom" ? "/api/labcom/sync" :
-          provider === "shelly" ? "/api/shelly/sync" :
-          null;
-        if (syncUrl) {
-          fetch(syncUrl, { method: "POST" }).catch(() => {});
+        if (provider === "gecko" && s.config.host) {
+          // Gecko: use connect endpoint which saves host + syncs + starts polling
+          fetch("/api/gecko/connect", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ host: s.config.host }),
+          }).then(() => loadGeckoStatus()).catch(() => {});
+        } else {
+          const syncUrl =
+            provider === "labcom" ? "/api/labcom/sync" :
+            provider === "shelly" ? "/api/shelly/sync" :
+            null;
+          if (syncUrl) {
+            fetch(syncUrl, { method: "POST" }).catch(() => {});
+          }
         }
       }
     },
-    [settings]
+    [settings, loadGeckoStatus]
   );
 
   const handleSeedData = useCallback(async () => {
@@ -963,7 +837,6 @@ export default function EinstellungenPage() {
         )}
 
         <div className="grid gap-5">
-          <GeckoCard geckoStatus={geckoStatus} onRefreshStatus={loadGeckoStatus} />
           {PROVIDERS.map((meta) => (
             <ProviderCard
               key={meta.key}
@@ -973,6 +846,7 @@ export default function EinstellungenPage() {
               onSave={handleSave}
               saving={savingProvider === meta.key}
               saved={savedProvider === meta.key}
+              geckoStatus={meta.key === "gecko" ? geckoStatus : undefined}
             />
           ))}
         </div>
