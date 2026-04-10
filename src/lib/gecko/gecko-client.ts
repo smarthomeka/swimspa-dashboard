@@ -19,14 +19,17 @@ const INTOUCH2_PORT = 10022;
 const MESSAGE_ENCODING = "latin1" as const;
 const PROTOCOL_TIMEOUT_MS = 4_000;
 const DISCOVERY_TIMEOUT_MS = 8_000;
-const CONNECTION_TIMEOUT_MS = 30_000;
+const CONNECTION_TIMEOUT_MS = 45_000; // geckolib uses 45s
 
-/** Generate a geckolib-compatible client identifier: IOS1<8 hex chars> */
+/** Generate a geckolib-compatible client identifier: IOS<uuid> */
 function generateClientId(): string {
-  const hex = Array.from({ length: 8 }, () =>
-    Math.floor(Math.random() * 16).toString(16).toUpperCase()
-  ).join("");
-  return `IOS1${hex}`;
+  // geckolib format: "IOS" + UUID v4 (e.g. "IOSa2d936db-4e95-4e4d-82bc-b4225fa99739")
+  const uuid = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+  return `IOS${uuid}`;
 }
 
 // ── PACKT framing ────────────────────────────────────────────────
