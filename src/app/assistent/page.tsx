@@ -3,8 +3,11 @@
 import { useEffect, useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Bot, RefreshCw, Send, Clock, AlertCircle, Sparkles } from "lucide-react";
+import {
+  Bot, RefreshCw, Clock, AlertCircle, Sparkles,
+  Copy, Check, ClipboardPaste, ExternalLink, ChevronDown, ChevronUp,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface Recommendation {
   id: number;
@@ -28,7 +31,7 @@ function MarkdownContent({ text }: { text: string }) {
   const elements: React.ReactNode[] = [];
 
   for (let i = 0; i < lines.length; i++) {
-    let line = lines[i];
+    const line = lines[i];
 
     if (line.startsWith("## ")) {
       elements.push(
@@ -48,6 +51,14 @@ function MarkdownContent({ text }: { text: string }) {
           {renderInline(line.slice(2))}
         </li>
       );
+    } else if (line.match(/^\d+\.\s/)) {
+      elements.push(
+        <li key={i} className="ml-4 text-sm leading-relaxed list-decimal marker:text-primary/40">
+          {renderInline(line.replace(/^\d+\.\s/, ""))}
+        </li>
+      );
+    } else if (line.trim() === "---") {
+      elements.push(<hr key={i} className="my-3 border-border/50" />);
     } else if (line.trim() === "") {
       elements.push(<div key={i} className="h-2" />);
     } else {
@@ -113,9 +124,13 @@ function renderInline(text: string): React.ReactNode {
 export default function AssistentPage() {
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [loading, setLoading] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [question, setQuestion] = useState("");
+  const [prompt, setPrompt] = useState("");
   const [promptLoading, setPromptLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const [promptExpanded, setPromptExpanded] = useState(false);
+  const [pasteMode, setPasteMode] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadHistory = useCallback(async () => {
@@ -136,9 +151,9 @@ export default function AssistentPage() {
     try {
       const res = await fetch("/api/assistant/prompt");
       const data = await res.json();
-      if (data.prompt) setQuestion(data.prompt);
+      if (data.prompt) setPrompt(data.prompt);
     } catch {
-      // Silently fail — user can still type manually
+      // Silently fail
     } finally {
       setPromptLoading(false);
     }
@@ -149,36 +164,53 @@ export default function AssistentPage() {
     loadAutoPrompt();
   }, [loadHistory, loadAutoPrompt]);
 
-  async function generateAnalysis(message?: string) {
-    setGenerating(true);
+  async function copyPrompt() {
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      // Fallback: select textarea content
+      const textarea = document.querySelector("textarea");
+      if (textarea) {
+        textarea.select();
+        document.execCommand("copy");
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2500);
+      }
+    }
+  }
+
+  async function saveResponse() {
+    if (!pasteText.trim()) return;
+    setSaving(true);
     setError(null);
     try {
       const res = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: message || undefined }),
+        body: JSON.stringify({ text: pasteText.trim() }),
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Fehler bei der Analyse.");
+        setError(data.error || "Fehler beim Speichern.");
         return;
       }
       setRecommendations((prev) => [
         { id: data.id, text: data.text, model: data.model, timestamp: data.timestamp },
         ...prev,
       ]);
-      loadAutoPrompt();
+      setPasteText("");
+      setPasteMode(false);
     } catch {
-      setError("Verbindungsfehler. Bitte erneut versuchen.");
+      setError("Speichern fehlgeschlagen.");
     } finally {
-      setGenerating(false);
+      setSaving(false);
     }
   }
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    generateAnalysis(question || undefined);
-  }
+  const promptLineCount = prompt.split("\n").length;
+  const previewLines = 12;
 
   return (
     <div className="space-y-8 animate-fade-up">
@@ -187,51 +219,159 @@ export default function AssistentPage() {
           KI-Assistent
         </h1>
         <p className="mt-1 text-base text-muted-foreground">
-          Intelligente Empfehlungen für Wasserqualität und Energieverbrauch
+          Kopiere den Prompt in Claude für eine Wasserchemie-Analyse
         </p>
       </div>
 
-      {/* Action Bar */}
+      {/* Step 1: Generated Prompt */}
       <Card className="card-glow relative overflow-hidden">
         <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-primary to-transparent" />
         <CardContent className="pt-6">
-          <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                <Sparkles className="mr-1.5 inline h-3 w-3" />
-                Auto-generierter Prompt
+              <label className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>Schritt 1 — Prompt kopieren</span>
               </label>
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={loadAutoPrompt}
-                disabled={promptLoading || generating}
+                onClick={() => { loadAutoPrompt(); setPromptExpanded(false); }}
+                disabled={promptLoading}
                 className="h-7 text-xs"
               >
-                <RefreshCw className={`mr-1 h-3 w-3 ${promptLoading ? "animate-spin" : ""}`} />
-                Neu generieren
+                <RefreshCw className={cn("mr-1 h-3 w-3", promptLoading && "animate-spin")} />
+                Aktualisieren
               </Button>
             </div>
-            <textarea
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              placeholder={promptLoading ? "Prompt wird generiert..." : "Frage stellen oder Prompt anpassen..."}
-              disabled={generating || promptLoading}
-              rows={8}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm leading-relaxed ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
-            />
-            <div className="flex justify-end">
-              <Button type="submit" disabled={generating || promptLoading || !question.trim()}>
-                {generating ? (
-                  <RefreshCw className="mr-1.5 h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="mr-1.5 h-4 w-4" />
+
+            {/* Prompt preview */}
+            <div className="relative">
+              <div
+                className={cn(
+                  "rounded-lg border border-input bg-muted/30 px-4 py-3 text-sm leading-relaxed font-mono whitespace-pre-wrap overflow-hidden transition-all duration-300",
+                  promptExpanded ? "max-h-none" : "max-h-[280px]"
                 )}
-                {generating ? "Analysiert..." : "Analyse starten"}
-              </Button>
+              >
+                {promptLoading ? (
+                  <span className="text-muted-foreground animate-pulse">Prompt wird aus aktuellen Daten generiert...</span>
+                ) : (
+                  <MarkdownContent text={prompt} />
+                )}
+              </div>
+              {!promptExpanded && promptLineCount > previewLines && (
+                <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-background to-transparent pointer-events-none rounded-b-lg" />
+              )}
             </div>
-          </form>
+
+            {promptLineCount > previewLines && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setPromptExpanded(!promptExpanded)}
+                className="w-full text-xs text-muted-foreground"
+              >
+                {promptExpanded ? <ChevronUp className="mr-1 h-3 w-3" /> : <ChevronDown className="mr-1 h-3 w-3" />}
+                {promptExpanded ? "Weniger anzeigen" : `Vollständigen Prompt anzeigen (${promptLineCount} Zeilen)`}
+              </Button>
+            )}
+
+            {/* Action buttons */}
+            <div className="flex gap-3 pt-1">
+              <Button
+                onClick={copyPrompt}
+                disabled={promptLoading || !prompt}
+                className={cn(
+                  "flex-1 h-12 text-base font-semibold transition-all duration-300",
+                  copied
+                    ? "bg-emerald-600 hover:bg-emerald-600 text-white"
+                    : ""
+                )}
+              >
+                {copied ? (
+                  <>
+                    <Check className="mr-2 h-5 w-5" />
+                    In Zwischenablage kopiert!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="mr-2 h-5 w-5" />
+                    Prompt kopieren
+                  </>
+                )}
+              </Button>
+              <a
+                href="https://claude.ai/new"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center rounded-md border border-input bg-background h-12 px-4 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Claude öffnen
+              </a>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Step 2: Paste response (optional) */}
+      <Card className="card-glow relative overflow-hidden">
+        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
+        <CardContent className="pt-6">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                <ClipboardPaste className="h-3.5 w-3.5" />
+                <span>Schritt 2 — Antwort speichern (optional)</span>
+              </label>
+            </div>
+
+            {!pasteMode ? (
+              <button
+                onClick={() => setPasteMode(true)}
+                className="w-full rounded-lg border-2 border-dashed border-border/60 bg-muted/20 py-6 text-center transition-all duration-200 hover:border-primary/40 hover:bg-muted/40"
+              >
+                <ClipboardPaste className="mx-auto mb-2 h-6 w-6 text-muted-foreground/50" />
+                <p className="text-sm font-medium text-muted-foreground">
+                  Claude-Antwort hier einfügen, um sie zu archivieren
+                </p>
+              </button>
+            ) : (
+              <>
+                <textarea
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  placeholder="Claude-Antwort hier einfügen..."
+                  rows={8}
+                  autoFocus
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm leading-relaxed ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-y"
+                />
+                <div className="flex gap-2 justify-end">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => { setPasteMode(false); setPasteText(""); }}
+                  >
+                    Abbrechen
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={saveResponse}
+                    disabled={saving || !pasteText.trim()}
+                  >
+                    {saving ? (
+                      <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Check className="mr-1.5 h-3.5 w-3.5" />
+                    )}
+                    Speichern
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -245,7 +385,7 @@ export default function AssistentPage() {
         </Card>
       )}
 
-      {/* Recommendations */}
+      {/* History */}
       {loading && recommendations.length === 0 ? (
         <div className="flex items-center justify-center py-20">
           <div className="flex flex-col items-center gap-4">
@@ -253,19 +393,11 @@ export default function AssistentPage() {
             <p className="text-sm font-medium text-muted-foreground">Lade Empfehlungen...</p>
           </div>
         </div>
-      ) : recommendations.length === 0 ? (
-        <Card className="card-glow">
-          <CardContent className="py-16 text-center">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
-              <Bot className="h-7 w-7 text-primary/60" />
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Noch keine Analysen vorhanden. Starte eine Tagesanalyse, um Empfehlungen zu erhalten.
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
+      ) : recommendations.length > 0 && (
         <div className="space-y-5">
+          <h2 className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            Gespeicherte Analysen
+          </h2>
           {recommendations.map((rec) => (
             <Card key={rec.id} className="card-glow">
               <CardHeader className="pb-3">

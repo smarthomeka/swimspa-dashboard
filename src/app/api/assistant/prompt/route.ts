@@ -4,6 +4,7 @@ import {
   getDosingLogs,
   getReadings,
   getDosingResponses,
+  getDailyEnergyConsumption,
 } from "@/lib/db/queries";
 
 const TARGET_RANGES: Record<string, { min: number; max: number; unit: string; label: string }> = {
@@ -31,13 +32,13 @@ function relTime(iso: string): string {
 function assess(key: string, value: number): string {
   const range = TARGET_RANGES[key];
   if (!range) return "";
-  if (value < range.min) return `unter Zielbereich (${range.min}–${range.max})`;
-  if (value > range.max) return `über Zielbereich (${range.min}–${range.max})`;
-  return "im Zielbereich";
+  if (value < range.min) return `⚠️ UNTER Zielbereich (${range.min}–${range.max})`;
+  if (value > range.max) return `⚠️ ÜBER Zielbereich (${range.min}–${range.max})`;
+  return `✅ im Zielbereich (${range.min}–${range.max})`;
 }
 
 function trend(readings: { value: number }[]): string {
-  if (readings.length < 3) return "zu wenig Daten für Trend";
+  if (readings.length < 3) return "zu wenig Daten";
   const first = readings.slice(0, Math.ceil(readings.length / 3));
   const last = readings.slice(-Math.ceil(readings.length / 3));
   const avgFirst = first.reduce((s, r) => s + r.value, 0) / first.length;
@@ -45,7 +46,7 @@ function trend(readings: { value: number }[]): string {
   const diff = avgLast - avgFirst;
   const pct = Math.abs(diff / avgFirst) * 100;
   if (pct < 2) return "stabil";
-  return diff > 0 ? "steigend" : "fallend";
+  return diff > 0 ? `↗ steigend (+${fmt(pct, 1)}%)` : `↘ fallend (${fmt(-pct, 1)}%)`;
 }
 
 export async function GET() {
@@ -53,9 +54,10 @@ export async function GET() {
   const now = new Date();
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-  const [dosingLogs, dosingResponsesData, phHistory, bromineHistory, alkalinityHistory, orpHistory] = await Promise.all([
+  const [dosingLogs, dosingResponsesData, energyData, phHistory, bromineHistory, alkalinityHistory, orpHistory] = await Promise.all([
     getDosingLogs(sevenDaysAgo),
     getDosingResponses(),
+    getDailyEnergyConsumption(sevenDaysAgo),
     getReadings("labcom", "ph", sevenDaysAgo, 500),
     getReadings("labcom", "bromine", sevenDaysAgo, 500),
     getReadings("labcom", "alkalinity", sevenDaysAgo, 500),
@@ -64,13 +66,30 @@ export async function GET() {
 
   const lines: string[] = [];
 
-  // Current values section
-  lines.push("Bitte analysiere die folgenden aktuellen Wasserwerte meines SwimSpas und gib mir konkrete Dosierungsempfehlungen:\n");
+  // ── System context (so Claude knows what it's dealing with) ──
+  lines.push("Du bist mein Wasserchemie-Berater für meinen Armstark Lotus 460 SwimSpa (~7.300 Liter, Brom-basiert).");
+  lines.push("");
+  lines.push("Verfügbare Chemikalien:");
+  lines.push("- tubhub Bromine Granules (Gramm) – Brom-Granulat");
+  lines.push("- hth Spa Brom Tabs (Stück) – Brom-Tabletten für Schwimmer");
+  lines.push("- hth Spa Schock-Sauerstoff (Gramm) – Schockbehandlung");
+  lines.push("- Armstark PH+ (Gramm) – pH erhöhen");
+  lines.push("- Armstark PH- (Gramm) – pH senken");
+  lines.push("- SpaLine Calcium+ (Gramm) – Alkalinität erhöhen");
+  lines.push("");
 
+  // ── Current values ──
+  lines.push("---");
+  lines.push("");
   lines.push("## Aktuelle Messwerte");
+  lines.push("");
 
   if (latest.temperature) {
-    lines.push(`- Wassertemperatur: ${fmt(latest.temperature.value)}°C (${relTime(latest.temperature.timestamp)})`);
+    const setPointStr = latest.setPoint ? ` (Soll: ${fmt(latest.setPoint.value)}°C)` : "";
+    const heatingStr = latest.heatingStatus
+      ? latest.heatingStatus.value === 1 ? " 🔥 Heizung aktiv" : ""
+      : "";
+    lines.push(`- **Wassertemperatur**: ${fmt(latest.temperature.value)}°C${setPointStr}${heatingStr} — ${relTime(latest.temperature.timestamp)}`);
   }
 
   const metrics: { key: string; data: typeof latest.ph }[] = [
@@ -85,13 +104,13 @@ export async function GET() {
     if (data) {
       const status = assess(key, data.value);
       const unit = "unit" in data && data.unit ? ` ${data.unit}` : (range.unit ? ` ${range.unit}` : "");
-      lines.push(`- ${range.label}: ${fmt(data.value, key === "orp" ? 0 : 2)}${unit} → ${status} (${relTime(data.timestamp)})`);
+      lines.push(`- **${range.label}**: ${fmt(data.value, key === "orp" ? 0 : 2)}${unit} → ${status} — ${relTime(data.timestamp)}`);
     } else {
-      lines.push(`- ${range.label}: keine aktuellen Daten`);
+      lines.push(`- **${range.label}**: keine aktuellen Daten`);
     }
   }
 
-  // Trends
+  // ── Trends ──
   const histories: { key: string; data: { value: number }[] }[] = [
     { key: "ph", data: phHistory },
     { key: "bromine", data: bromineHistory },
@@ -101,27 +120,51 @@ export async function GET() {
 
   const trendLines = histories
     .filter(h => h.data.length >= 3)
-    .map(h => `${TARGET_RANGES[h.key].label}: ${trend(h.data)} (${h.data.length} Messpunkte)`);
+    .map(h => {
+      const vals = h.data.map(r => r.value);
+      const min = Math.min(...vals);
+      const max = Math.max(...vals);
+      const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+      return `- **${TARGET_RANGES[h.key].label}**: ${trend(h.data)} · Min: ${fmt(min, 2)} · Max: ${fmt(max, 2)} · Ø ${fmt(avg, 2)} (${h.data.length} Messpunkte)`;
+    });
 
   if (trendLines.length > 0) {
-    lines.push("\n## Trends der letzten 7 Tage");
-    for (const t of trendLines) lines.push(`- ${t}`);
+    lines.push("");
+    lines.push("## 7-Tage-Trends");
+    lines.push("");
+    for (const t of trendLines) lines.push(t);
   }
 
-  // Recent dosing
-  const recentDosing = dosingLogs.slice(0, 10);
+  // ── Energy ──
+  const recentEnergy = energyData.slice(-7);
+  if (recentEnergy.length > 0) {
+    const totalKwh = recentEnergy.reduce((s, d) => s + (d.maxKwh - d.minKwh), 0);
+    const avgKwhPerDay = totalKwh / recentEnergy.length;
+    lines.push("");
+    lines.push("## Energieverbrauch (letzte 7 Tage)");
+    lines.push("");
+    lines.push(`- Gesamt: ${fmt(totalKwh, 1)} kWh · Ø ${fmt(avgKwhPerDay, 1)} kWh/Tag`);
+  }
+
+  // ── Recent dosing ──
+  const recentDosing = dosingLogs.slice(0, 15);
   if (recentDosing.length > 0) {
-    lines.push("\n## Letzte Dosierungen");
+    lines.push("");
+    lines.push("## Letzte Dosierungen");
+    lines.push("");
     for (const d of recentDosing) {
       const dateStr = new Date(d.timestamp).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-      lines.push(`- ${dateStr}: ${fmt(d.amountMl, 0)}g ${d.chemical}${d.notes ? ` (${d.notes})` : ""}`);
+      lines.push(`- ${dateStr}: **${fmt(d.amountMl, 0)}g ${d.chemical}**${d.notes ? ` — ${d.notes}` : ""}`);
     }
   }
 
-  // Dosing response patterns
-  const responses = dosingResponsesData.slice(0, 5);
+  // ── Dosing response patterns ──
+  const responses = dosingResponsesData.slice(0, 8);
   if (responses.length > 0) {
-    lines.push("\n## Bekannte Wirkungsmuster");
+    lines.push("");
+    lines.push("## Bekannte Dosierungs-Wirkungsmuster");
+    lines.push("*(So hat der Spa bisher auf Chemikalien reagiert)*");
+    lines.push("");
     for (const r of responses) {
       const before = JSON.parse(r.metricsBefore);
       const after = JSON.parse(r.metricsAfter);
@@ -135,13 +178,15 @@ export async function GET() {
         }
       }
       if (changes.length > 0) {
-        lines.push(`- ${fmt(r.amountMl, 0)}g ${r.chemical} → nach ${fmt(r.hoursElapsed, 0)}h: ${changes.join(", ")}`);
+        lines.push(`- **${fmt(r.amountMl, 0)}g ${r.chemical}** → nach ${fmt(r.hoursElapsed, 0)}h: ${changes.join(", ")}`);
       }
     }
   }
 
-  // The actual question
-  lines.push("\n## Frage");
+  // ── Question ──
+  lines.push("");
+  lines.push("---");
+  lines.push("");
 
   const issues: string[] = [];
   for (const { key, data } of metrics) {
@@ -152,11 +197,23 @@ export async function GET() {
   }
 
   if (issues.length > 0) {
-    lines.push(`Folgende Werte sind außerhalb des Zielbereichs: ${issues.join(", ")}.`);
-    lines.push("Welche Chemikalien soll ich in welcher Menge zugeben, um die Werte zu korrigieren? Bitte berücksichtige dabei die bisherigen Dosierungen und deren Wirkung.");
+    lines.push(`**Folgende Werte sind außerhalb des Zielbereichs: ${issues.join(", ")}.**`);
+    lines.push("");
+    lines.push("Bitte analysiere die Situation und gib mir eine konkrete Empfehlung:");
+    lines.push("1. Welche Chemikalie(n) soll ich zugeben?");
+    lines.push("2. Wieviel genau (in Gramm oder Stück)?");
+    lines.push("3. Zu welchem Zeitpunkt (sofort, abends, morgens)?");
+    lines.push("4. Berücksichtige dabei die bisherigen Dosierungen und deren Wirkung auf meinen Spa.");
+    lines.push("5. Wann sollte ich nach der Dosierung erneut messen?");
   } else {
-    lines.push("Alle Werte sind aktuell im Zielbereich. Gibt es trotzdem Handlungsbedarf basierend auf den Trends? Wann sollte ich das nächste Mal messen und ggf. nachdosieren?");
+    lines.push("**Alle Werte sind aktuell im Zielbereich.** Bitte analysiere trotzdem:");
+    lines.push("1. Gibt es basierend auf den Trends Handlungsbedarf?");
+    lines.push("2. Wann sollte ich das nächste Mal messen?");
+    lines.push("3. Gibt es präventive Maßnahmen die ich jetzt treffen sollte?");
   }
+
+  lines.push("");
+  lines.push("Antworte auf Deutsch, strukturiert mit Überschriften. Sei konkret mit Mengenangaben, keine generischen Ratschläge.");
 
   return NextResponse.json({ prompt: lines.join("\n") });
 }
