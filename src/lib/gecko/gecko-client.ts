@@ -263,8 +263,38 @@ export type SpaReading = {
   maxTemp: number | null;
   tempUnit: string | null;
   pumps: { id: string; active: boolean; mode: string | null }[];
+  circulationPump: { active: boolean } | null;
+  blower: { active: boolean } | null;
+  ozone: { active: boolean } | null;
+  waterfall: { active: boolean } | null;
   lights: { id: string; active: boolean }[];
+  econActive: boolean;
+  quietState: string | null; // "NOT_SET" | "DRAIN" | "SOAK" | "OFF"
+  lockMode: string | null; // "UNLOCK" | "PARTIAL" | "FULL"
+  masterHeater: { active: boolean } | null;
+  slaveHeater: { active: boolean } | null;
   watercare: string | null;
+  reminders: { type: string; daysRemaining: number }[];
+  errors: string[];
+};
+
+export const WATERCARE_MODES = [
+  "Away From Home",
+  "Standard",
+  "Energy Saving",
+  "Super Energy Saving",
+  "Weekender",
+] as const;
+
+export type WatercareMode = typeof WATERCARE_MODES[number];
+
+export const REMINDER_TYPES: Record<number, string> = {
+  1: "Filter spülen",
+  2: "Filter reinigen",
+  3: "Wasser wechseln",
+  4: "Spa prüfen",
+  5: "Ozonator wechseln",
+  6: "Vision-Kartusche wechseln",
 };
 
 export async function readSpaState(host: string): Promise<SpaReading> {
@@ -479,7 +509,47 @@ export async function readSpaState(host: string): Promise<SpaReading> {
     });
 
     // Step 6: Parse status block using pack definitions
-    return parseStatusBlock(statusBlock, platformKey, configVersion, logVersion, spaName, spaId);
+    const reading = parseStatusBlock(statusBlock, platformKey, configVersion, logVersion, spaName, spaId);
+
+    // Step 7: GETWC — get watercare mode (separate protocol, not in status block)
+    try {
+      const getwcData = Buffer.alloc(6);
+      getwcData.write("GETWC", 0, MESSAGE_ENCODING);
+      getwcData.writeUInt8(seq.next(), 5);
+      const getwcPacket = buildPacket(clientId, spaIdentifier, getwcData);
+      const wcResult = await exchange(transport, getwcPacket, INTOUCH2_PORT, host, "WCGET", PROTOCOL_TIMEOUT_MS, 2);
+      // WCGET response: verb(5) + seq(1) + mode(1)
+      if (wcResult.data.length >= 7) {
+        const modeIndex = wcResult.data.readUInt8(6);
+        reading.watercare = WATERCARE_MODES[modeIndex] ?? `Modus ${modeIndex}`;
+      }
+    } catch {
+      // Watercare not supported or timeout — leave as null
+    }
+
+    // Step 8: REQRM — get reminders (separate protocol)
+    try {
+      const reqrmData = Buffer.alloc(6);
+      reqrmData.write("REQRM", 0, MESSAGE_ENCODING);
+      reqrmData.writeUInt8(seq.next(), 5);
+      const reqrmPacket = buildPacket(clientId, spaIdentifier, reqrmData);
+      const rmResult = await exchange(transport, reqrmPacket, INTOUCH2_PORT, host, "RMREQ", PROTOCOL_TIMEOUT_MS, 2);
+      // RMREQ response: verb(5) + seq(1) + count(1) + [type(1) + days(2)] * count
+      if (rmResult.data.length >= 7) {
+        const count = rmResult.data.readUInt8(6);
+        for (let i = 0; i < count && 7 + i * 3 + 2 < rmResult.data.length; i++) {
+          const offset = 7 + i * 3;
+          const type = rmResult.data.readUInt8(offset);
+          const days = rmResult.data.readInt16BE(offset + 1);
+          const typeName = REMINDER_TYPES[type] ?? `Erinnerung ${type}`;
+          reading.reminders.push({ type: typeName, daysRemaining: days });
+        }
+      }
+    } catch {
+      // Reminders not supported or timeout — leave empty
+    }
+
+    return reading;
   } finally {
     transport.close();
   }
@@ -674,6 +744,64 @@ function parseStatusBlock(
     }
   }
 
+  // Read circulation pump (CP)
+  let circulationPump: { active: boolean } | null = null;
+  if (log?.CP) {
+    const val = readEnum(block, log.CP.p, log.CP.b, log.CP.o);
+    circulationPump = { active: val === "ON" };
+  }
+
+  // Read blower (BL)
+  let blower: { active: boolean } | null = null;
+  if (log?.BL) {
+    const val = readEnum(block, log.BL.p, log.BL.b, log.BL.o);
+    blower = { active: val === "ON" };
+  }
+
+  // Read ozone (O3)
+  let ozone: { active: boolean } | null = null;
+  if (log?.O3) {
+    const val = readEnum(block, log.O3.p, log.O3.b, log.O3.o);
+    ozone = { active: val === "ON" };
+  }
+
+  // Read waterfall
+  let waterfall: { active: boolean } | null = null;
+  if (log?.Waterfall) {
+    const val = readEnum(block, log.Waterfall.p, log.Waterfall.b, log.Waterfall.o);
+    waterfall = { active: val === "ON" };
+  }
+
+  // Read economy mode
+  let econActive = false;
+  if (log?.EconActive) {
+    econActive = readBool(block, log.EconActive.p, log.EconActive.b ?? 0);
+  }
+
+  // Read quiet/standby state
+  let quietState: string | null = null;
+  if (log?.QuietState) {
+    quietState = readEnum(block, log.QuietState.p, log.QuietState.b, log.QuietState.o);
+  }
+
+  // Read lock mode
+  let lockMode: string | null = null;
+  if (log?.LockMode) {
+    lockMode = readEnum(block, log.LockMode.p, log.LockMode.b, log.LockMode.o);
+  }
+
+  // Read heaters
+  let masterHeater: { active: boolean } | null = null;
+  if (log?.MSTR_HEATER) {
+    const val = readEnum(block, log.MSTR_HEATER.p, log.MSTR_HEATER.b, log.MSTR_HEATER.o);
+    masterHeater = { active: val === "ON" };
+  }
+  let slaveHeater: { active: boolean } | null = null;
+  if (log?.SLV_HEATER) {
+    const val = readEnum(block, log.SLV_HEATER.p, log.SLV_HEATER.b, log.SLV_HEATER.o);
+    slaveHeater = { active: val === "ON" };
+  }
+
   // Read lights
   const lights: { id: string; active: boolean }[] = [];
   const lightAcc = log?.LI;
@@ -687,8 +815,21 @@ function parseStatusBlock(
     lights.push({ id: "L120", active: val !== "OFF" && val !== "" });
   }
 
-  // Read watercare (from config if available)
-  const watercare: string | null = null;
+  // Collect errors from known error keys
+  const errors: string[] = [];
+  const errorKeys = [
+    "OverTemp", "HeaterStuck", "RegOverHeat", "RelayStuck",
+    "RhRegProbeErr", "ThermFuseErr", "ThermistanceErr",
+    "KinPumpOff", "P1HStuck", "P2HStuck",
+    "FiltSuspendedByErr", "TempNotValid", "AmbiantOHLevel2",
+  ];
+  for (const key of errorKeys) {
+    const acc = log?.[key];
+    if (acc) {
+      const isErr = readBool(block, acc.p, acc.b ?? 0);
+      if (isErr) errors.push(key);
+    }
+  }
 
   return {
     spaName,
@@ -700,8 +841,19 @@ function parseStatusBlock(
     maxTemp,
     tempUnit: isCelsius ? "C" : "F",
     pumps,
+    circulationPump,
+    blower,
+    ozone,
+    waterfall,
     lights,
-    watercare,
+    econActive,
+    quietState,
+    lockMode,
+    masterHeater,
+    slaveHeater,
+    watercare: null, // fetched via separate GETWC protocol in readSpaState
+    reminders: [], // fetched via separate REQRM protocol in readSpaState
+    errors,
   };
 }
 

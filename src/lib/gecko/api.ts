@@ -26,6 +26,11 @@ export type GeckoLightState = {
   active: boolean;
 };
 
+export type GeckoReminder = {
+  type: string;
+  daysRemaining: number;
+};
+
 export type GeckoSpaReading = {
   spaName: string;
   spaId: string;
@@ -36,8 +41,19 @@ export type GeckoSpaReading = {
   maxTemp: number | null;
   tempUnit: string | null;
   pumps: GeckoPumpState[];
+  circulationPump: { active: boolean } | null;
+  blower: { active: boolean } | null;
+  ozone: { active: boolean } | null;
+  waterfall: { active: boolean } | null;
   lights: GeckoLightState[];
+  econActive: boolean;
+  quietState: string | null;
+  lockMode: string | null;
+  masterHeater: { active: boolean } | null;
+  slaveHeater: { active: boolean } | null;
   watercare: string | null;
+  reminders: GeckoReminder[];
+  errors: string[];
 };
 
 export type GeckoDiscoveredSpa = {
@@ -75,7 +91,18 @@ export async function readSpaState(host: string): Promise<GeckoSpaReading> {
     maxTemp: reading.maxTemp,
     tempUnit: reading.tempUnit,
     pumps: reading.pumps,
+    circulationPump: reading.circulationPump,
+    blower: reading.blower,
+    ozone: reading.ozone,
+    waterfall: reading.waterfall,
     lights: reading.lights,
+    econActive: reading.econActive,
+    quietState: reading.quietState,
+    lockMode: reading.lockMode,
+    masterHeater: reading.masterHeater,
+    slaveHeater: reading.slaveHeater,
     watercare: reading.watercare,
+    reminders: reading.reminders,
+    errors: reading.errors,
   };
 }

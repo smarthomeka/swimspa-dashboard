@@ -202,7 +202,7 @@ class GeckoService {
       });
     }
 
-    // Pump status — 1 if any pump is active, 0 otherwise
+    // Pump status — 1 if any pump is active, 0 otherwise (legacy aggregate)
     const anyPumpActive = reading.pumps.some((p) => p.active);
     rows.push({
       source: "gecko",
@@ -211,6 +211,85 @@ class GeckoService {
       unit: "",
       timestamp: now,
     });
+
+    // Individual pumps (P1–P5) with mode as numeric: 0=OFF, 1=LOW, 2=HIGH
+    for (const pump of reading.pumps) {
+      let modeValue = 0;
+      if (pump.mode === "LOW") modeValue = 1;
+      else if (pump.mode === "HIGH") modeValue = 2;
+      else if (pump.active) modeValue = 2; // fallback if active but unknown mode
+      rows.push({
+        source: "gecko",
+        metric: `pump_${pump.id.toLowerCase()}`,
+        value: modeValue,
+        unit: "",
+        timestamp: now,
+      });
+    }
+
+    // Circulation pump
+    if (reading.circulationPump != null) {
+      rows.push({
+        source: "gecko",
+        metric: "circulation_pump",
+        value: reading.circulationPump.active ? 1 : 0,
+        unit: "",
+        timestamp: now,
+      });
+    }
+
+    // Blower
+    if (reading.blower != null) {
+      rows.push({
+        source: "gecko",
+        metric: "blower",
+        value: reading.blower.active ? 1 : 0,
+        unit: "",
+        timestamp: now,
+      });
+    }
+
+    // Ozone
+    if (reading.ozone != null) {
+      rows.push({
+        source: "gecko",
+        metric: "ozone",
+        value: reading.ozone.active ? 1 : 0,
+        unit: "",
+        timestamp: now,
+      });
+    }
+
+    // Waterfall
+    if (reading.waterfall != null) {
+      rows.push({
+        source: "gecko",
+        metric: "waterfall",
+        value: reading.waterfall.active ? 1 : 0,
+        unit: "",
+        timestamp: now,
+      });
+    }
+
+    // Economy mode
+    rows.push({
+      source: "gecko",
+      metric: "econ_active",
+      value: reading.econActive ? 1 : 0,
+      unit: "",
+      timestamp: now,
+    });
+
+    // Heaters
+    if (reading.masterHeater != null) {
+      rows.push({
+        source: "gecko",
+        metric: "master_heater",
+        value: reading.masterHeater.active ? 1 : 0,
+        unit: "",
+        timestamp: now,
+      });
+    }
 
     if (rows.length > 0) {
       await db.insert(sensorReadings).values(rows).run();

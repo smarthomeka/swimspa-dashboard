@@ -132,7 +132,18 @@ export async function insertDosingResponse(resp: {
 
 export async function getLatestValues() {
   const temp = await getLatestReading("gecko", "temperature");
+  const setPoint = await getLatestReading("gecko", "set_point");
+  const heatingStatus = await getLatestReading("gecko", "heating_status");
   const pumpStatus = await getLatestReading("gecko", "pump_status");
+  const pumpP1 = await getLatestReading("gecko", "pump_p1");
+  const pumpP2 = await getLatestReading("gecko", "pump_p2");
+  const pumpP3 = await getLatestReading("gecko", "pump_p3");
+  const circPump = await getLatestReading("gecko", "circulation_pump");
+  const blower = await getLatestReading("gecko", "blower");
+  const ozone = await getLatestReading("gecko", "ozone");
+  const waterfall = await getLatestReading("gecko", "waterfall");
+  const econActive = await getLatestReading("gecko", "econ_active");
+  const masterHeater = await getLatestReading("gecko", "master_heater");
   const ph = await getLatestReading("labcom", "ph");
   const bromine = await getLatestReading("labcom", "bromine");
   const alkalinity = await getLatestReading("labcom", "alkalinity");
@@ -140,9 +151,24 @@ export async function getLatestValues() {
   const powerW = await getLatestReading("shelly", "power_w");
   const energyKwh = await getLatestReading("shelly", "energy_kwh");
 
+  const PUMP_MODES: Record<number, string> = { 0: "OFF", 1: "LOW", 2: "HIGH" };
+
   return {
     temperature: temp ? { value: temp.value, unit: temp.unit, timestamp: temp.timestamp } : null,
+    setPoint: setPoint ? { value: setPoint.value, unit: setPoint.unit, timestamp: setPoint.timestamp } : null,
+    heatingStatus: heatingStatus ? { value: heatingStatus.value, timestamp: heatingStatus.timestamp } : null,
     pumpStatus: pumpStatus ? { value: pumpStatus.value, timestamp: pumpStatus.timestamp } : null,
+    pumps: {
+      p1: pumpP1 ? { mode: PUMP_MODES[pumpP1.value] ?? "OFF", active: pumpP1.value > 0, timestamp: pumpP1.timestamp } : null,
+      p2: pumpP2 ? { mode: PUMP_MODES[pumpP2.value] ?? "OFF", active: pumpP2.value > 0, timestamp: pumpP2.timestamp } : null,
+      p3: pumpP3 ? { mode: PUMP_MODES[pumpP3.value] ?? "OFF", active: pumpP3.value > 0, timestamp: pumpP3.timestamp } : null,
+    },
+    circulationPump: circPump ? { active: circPump.value === 1, timestamp: circPump.timestamp } : null,
+    blower: blower ? { active: blower.value === 1, timestamp: blower.timestamp } : null,
+    ozone: ozone ? { active: ozone.value === 1, timestamp: ozone.timestamp } : null,
+    waterfall: waterfall ? { active: waterfall.value === 1, timestamp: waterfall.timestamp } : null,
+    econActive: econActive ? { active: econActive.value === 1, timestamp: econActive.timestamp } : null,
+    masterHeater: masterHeater ? { active: masterHeater.value === 1, timestamp: masterHeater.timestamp } : null,
     ph: ph ? { value: ph.value, timestamp: ph.timestamp } : null,
     bromine: bromine ? { value: bromine.value, unit: bromine.unit, timestamp: bromine.timestamp } : null,
     alkalinity: alkalinity ? { value: alkalinity.value, unit: alkalinity.unit, timestamp: alkalinity.timestamp } : null,

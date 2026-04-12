@@ -54,14 +54,26 @@ export async function seedMockData(force = false) {
         timestamp,
       });
 
-      // Gecko — pump status (0 or 1)
-      readings.push({
-        source: "gecko",
-        metric: "pump_status",
-        value: hour >= 8 && hour <= 22 ? (Math.random() > 0.3 ? 1 : 0) : 0,
-        unit: "",
-        timestamp,
-      });
+      // Gecko — individual pumps (0=OFF, 1=LOW, 2=HIGH)
+      const isActiveHours = hour >= 8 && hour <= 22;
+      const p1Mode = isActiveHours ? (Math.random() > 0.5 ? 2 : Math.random() > 0.5 ? 1 : 0) : 0;
+      const p2Mode = isActiveHours ? (Math.random() > 0.7 ? 2 : 0) : 0;
+      const p3Mode = isActiveHours && Math.random() > 0.85 ? 2 : 0; // Swim jet rarely on
+      const anyActive = p1Mode > 0 || p2Mode > 0 || p3Mode > 0;
+
+      readings.push(
+        { source: "gecko", metric: "pump_p1", value: p1Mode, unit: "", timestamp },
+        { source: "gecko", metric: "pump_p2", value: p2Mode, unit: "", timestamp },
+        { source: "gecko", metric: "pump_p3", value: p3Mode, unit: "", timestamp },
+        { source: "gecko", metric: "pump_status", value: anyActive ? 1 : 0, unit: "", timestamp },
+        { source: "gecko", metric: "circulation_pump", value: Math.random() > 0.2 ? 1 : 0, unit: "", timestamp },
+        { source: "gecko", metric: "ozone", value: hour >= 2 && hour <= 6 ? 1 : 0, unit: "", timestamp },
+        { source: "gecko", metric: "blower", value: isActiveHours && Math.random() > 0.9 ? 1 : 0, unit: "", timestamp },
+        { source: "gecko", metric: "econ_active", value: hour >= 0 && hour <= 6 ? 1 : 0, unit: "", timestamp },
+        { source: "gecko", metric: "heating_status", value: baseTemp < 37.5 ? 1 : 0, unit: "", timestamp },
+        { source: "gecko", metric: "master_heater", value: baseTemp < 37.5 ? 1 : 0, unit: "", timestamp },
+        { source: "gecko", metric: "set_point", value: 37.5, unit: "°C", timestamp },
+      );
 
       // Shelly 3EM — power draw
       const basePower = hour >= 8 && hour <= 22 ? 2200 : 800;
