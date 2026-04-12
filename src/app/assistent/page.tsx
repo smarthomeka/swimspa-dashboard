@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Bot, RefreshCw, Send, Clock, AlertCircle } from "lucide-react";
+import { Bot, RefreshCw, Send, Clock, AlertCircle, Sparkles } from "lucide-react";
 
 interface Recommendation {
   id: number;
@@ -115,6 +115,7 @@ export default function AssistentPage() {
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [question, setQuestion] = useState("");
+  const [promptLoading, setPromptLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const loadHistory = useCallback(async () => {
@@ -130,9 +131,23 @@ export default function AssistentPage() {
     }
   }, []);
 
+  const loadAutoPrompt = useCallback(async () => {
+    setPromptLoading(true);
+    try {
+      const res = await fetch("/api/assistant/prompt");
+      const data = await res.json();
+      if (data.prompt) setQuestion(data.prompt);
+    } catch {
+      // Silently fail — user can still type manually
+    } finally {
+      setPromptLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadHistory();
-  }, [loadHistory]);
+    loadAutoPrompt();
+  }, [loadHistory, loadAutoPrompt]);
 
   async function generateAnalysis(message?: string) {
     setGenerating(true);
@@ -152,7 +167,7 @@ export default function AssistentPage() {
         { id: data.id, text: data.text, model: data.model, timestamp: data.timestamp },
         ...prev,
       ]);
-      setQuestion("");
+      loadAutoPrompt();
     } catch {
       setError("Verbindungsfehler. Bitte erneut versuchen.");
     } finally {
@@ -180,24 +195,42 @@ export default function AssistentPage() {
       <Card className="card-glow relative overflow-hidden">
         <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-primary to-transparent" />
         <CardContent className="pt-6">
-          <form onSubmit={handleSubmit} className="flex gap-3">
-            <Input
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                <Sparkles className="mr-1.5 inline h-3 w-3" />
+                Auto-generierter Prompt
+              </label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={loadAutoPrompt}
+                disabled={promptLoading || generating}
+                className="h-7 text-xs"
+              >
+                <RefreshCw className={`mr-1 h-3 w-3 ${promptLoading ? "animate-spin" : ""}`} />
+                Neu generieren
+              </Button>
+            </div>
+            <textarea
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
-              placeholder="Frage stellen oder leer lassen für Tagesanalyse..."
-              disabled={generating}
-              className="flex-1"
+              placeholder={promptLoading ? "Prompt wird generiert..." : "Frage stellen oder Prompt anpassen..."}
+              disabled={generating || promptLoading}
+              rows={8}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm leading-relaxed ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
             />
-            <Button type="submit" disabled={generating}>
-              {generating ? (
-                <RefreshCw className="mr-1.5 h-4 w-4 animate-spin" />
-              ) : question ? (
-                <Send className="mr-1.5 h-4 w-4" />
-              ) : (
-                <Bot className="mr-1.5 h-4 w-4" />
-              )}
-              {generating ? "Analysiert..." : question ? "Fragen" : "Tagesanalyse"}
-            </Button>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={generating || promptLoading || !question.trim()}>
+                {generating ? (
+                  <RefreshCw className="mr-1.5 h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="mr-1.5 h-4 w-4" />
+                )}
+                {generating ? "Analysiert..." : "Analyse starten"}
+              </Button>
+            </div>
           </form>
         </CardContent>
       </Card>

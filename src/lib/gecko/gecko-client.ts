@@ -208,21 +208,20 @@ export async function discoverSpas(
   await transport.open();
 
   try {
-    const clientId = generateClientId();
-    // Build HELLO broadcast
-    const helloData = wrapXml("HELLO", Buffer.from("1"));
-    const packet = buildPacket(clientId, "", helloData);
+    // Discovery HELLO is sent BARE (no PACKT wrapping!) per geckolib protocol.
+    // The spa only recognizes raw <HELLO>1</HELLO> for discovery.
+    const bareHello = Buffer.from("<HELLO>1</HELLO>", MESSAGE_ENCODING);
 
     const spas: DiscoveredSpa[] = [];
     const broadcastAddr = targetAddress ?? "255.255.255.255";
 
     const handler: MessageHandler = (msg, rinfo) => {
-      const parsed = parsePacket(msg);
-      if (!parsed) return;
-      const helloContent = unwrapXml("HELLO", parsed.data);
-      if (!helloContent) return;
-      const content = helloContent.toString(MESSAGE_ENCODING);
-      // Skip our own broadcasts
+      // Discovery responses are also bare <HELLO>{id}|{name}</HELLO>
+      const str = msg.toString(MESSAGE_ENCODING);
+      const match = str.match(/<HELLO>([\s\S]*?)<\/HELLO>/);
+      if (!match) return;
+      const content = match[1];
+      // Skip our own broadcasts and other client hellos
       if (content === "1" || content.startsWith("IOS") || content.startsWith("AND"))
         return;
 
@@ -239,7 +238,7 @@ export async function discoverSpas(
 
     // Send discovery broadcast 3 times over a few seconds
     for (let i = 0; i < 3; i++) {
-      transport.send(packet, INTOUCH2_PORT, broadcastAddr);
+      transport.send(bareHello, INTOUCH2_PORT, broadcastAddr);
       await sleep(1500);
     }
 
@@ -275,9 +274,9 @@ export async function readSpaState(host: string): Promise<SpaReading> {
 
   try {
     // Step 1: HELLO — locate the spa
+    // Discovery HELLO must be sent BARE (no PACKT wrapping!) per geckolib protocol.
     const clientId = generateClientId();
-    const helloData = wrapXml("HELLO", Buffer.from("1"));
-    const helloPacket = buildPacket(clientId, "", helloData);
+    const bareHello = Buffer.from("<HELLO>1</HELLO>", MESSAGE_ENCODING);
 
     let spaId = "";
     let spaName = "Unbekannt";
@@ -291,11 +290,11 @@ export async function readSpaState(host: string): Promise<SpaReading> {
 
         const handler: MessageHandler = (msg, rinfo) => {
           if (rinfo.address !== host) return;
-          const parsed = parsePacket(msg);
-          if (!parsed) return;
-          const content = unwrapXml("HELLO", parsed.data);
-          if (!content) return;
-          const text = content.toString(MESSAGE_ENCODING);
+          // Discovery responses are bare <HELLO>...</HELLO> (no PACKT)
+          const str = msg.toString(MESSAGE_ENCODING);
+          const match = str.match(/<HELLO>([\s\S]*?)<\/HELLO>/);
+          if (!match) return;
+          const text = match[1];
           if (text === "1" || text.startsWith("IOS") || text.startsWith("AND")) return;
 
           clearTimeout(timer);
@@ -309,14 +308,14 @@ export async function readSpaState(host: string): Promise<SpaReading> {
 
         transport.addHandler(handler);
 
-        // Send HELLO to both unicast (target IP) and broadcast.
+        // Send bare HELLO to both unicast (target IP) and broadcast.
         // Some Gecko devices only respond to broadcast HELLO.
         const targets = [host, "255.255.255.255"];
         for (let i = 0; i < 4; i++) {
           setTimeout(() => {
             for (const addr of targets) {
               try {
-                transport.send(helloPacket, INTOUCH2_PORT, addr);
+                transport.send(bareHello, INTOUCH2_PORT, addr);
               } catch {
                 /* socket may be closed */
               }
@@ -336,6 +335,12 @@ export async function readSpaState(host: string): Promise<SpaReading> {
     spaName = helloResult.spaName;
 
     const spaIdentifier = spaId;
+
+    // Step 1b: Register client — send bare <HELLO>{clientId}</HELLO> to the spa.
+    // This tells the spa who we are before we start sending PACKT-based commands.
+    const clientHello = Buffer.from(`<HELLO>${clientId}</HELLO>`, MESSAGE_ENCODING);
+    transport.send(clientHello, INTOUCH2_PORT, host);
+    await sleep(200);
 
     // Step 2: AVERS — get firmware version
     const aversData = Buffer.alloc(6);
@@ -818,11 +823,11 @@ export async function diagnoseSpa(host: string): Promise<DiagnosticResult> {
     return { host, steps, success: false };
   }
 
-  // Step 2: Send HELLO (unicast + broadcast), wait for response
+  // Step 2: Send bare HELLO (unicast + broadcast), wait for response
   t0 = Date.now();
   const clientId = generateClientId();
-  const helloData = wrapXml("HELLO", Buffer.from("1"));
-  const helloPacket = buildPacket(clientId, "", helloData);
+  // Discovery HELLO must be bare (no PACKT wrapping!) per geckolib protocol.
+  const bareHello = Buffer.from("<HELLO>1</HELLO>", MESSAGE_ENCODING);
 
   let helloResponse: string | null = null;
   let responseSource: string | null = null;
@@ -835,11 +840,11 @@ export async function diagnoseSpa(host: string): Promise<DiagnosticResult> {
       }, 10_000);
 
       const handler: MessageHandler = (msg, rinfo) => {
-        const parsed = parsePacket(msg);
-        if (!parsed) return;
-        const content = unwrapXml("HELLO", parsed.data);
-        if (!content) return;
-        const text = content.toString(MESSAGE_ENCODING);
+        // Discovery responses are bare <HELLO>...</HELLO> (no PACKT)
+        const str = msg.toString(MESSAGE_ENCODING);
+        const match = str.match(/<HELLO>([\s\S]*?)<\/HELLO>/);
+        if (!match) return;
+        const text = match[1];
         if (text === "1" || text.startsWith("IOS") || text.startsWith("AND")) return;
         clearTimeout(timer);
         transport.removeHandler(handler);
@@ -848,12 +853,12 @@ export async function diagnoseSpa(host: string): Promise<DiagnosticResult> {
 
       transport.addHandler(handler);
 
-      // Send to both unicast and broadcast
+      // Send bare HELLO to both unicast and broadcast
       const targets = [host, "255.255.255.255"];
       for (let i = 0; i < 3; i++) {
         setTimeout(() => {
           for (const addr of targets) {
-            try { transport.send(helloPacket, INTOUCH2_PORT, addr); } catch { /* */ }
+            try { transport.send(bareHello, INTOUCH2_PORT, addr); } catch { /* */ }
           }
         }, i * 1500);
       }
@@ -885,8 +890,13 @@ export async function diagnoseSpa(host: string): Promise<DiagnosticResult> {
     return { host, steps, success: false };
   }
 
-  // Step 3: Try AVERS (version exchange)
+  // Step 2b: Register client with bare HELLO
   const spaId = helloResponse!.split("|")[0];
+  const clientHello = Buffer.from(`<HELLO>${clientId}</HELLO>`, MESSAGE_ENCODING);
+  transport.send(clientHello, INTOUCH2_PORT, responseSource!);
+  await sleep(200);
+
+  // Step 3: Try AVERS (version exchange)
   t0 = Date.now();
   try {
     const seq = new SequenceCounter();
