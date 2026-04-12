@@ -166,17 +166,38 @@ export default function AssistentPage() {
 
   async function copyPrompt() {
     try {
-      await navigator.clipboard.writeText(prompt);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
+      // Try modern clipboard API first (requires secure context)
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(prompt);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2500);
+        return;
+      }
+      throw new Error("No secure context");
     } catch {
-      // Fallback: select textarea content
-      const textarea = document.querySelector("textarea");
-      if (textarea) {
-        textarea.select();
+      // Fallback: create a hidden textarea, copy from it
+      const textarea = document.createElement("textarea");
+      textarea.value = prompt;
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      textarea.style.top = "-9999px";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      try {
         document.execCommand("copy");
         setCopied(true);
         setTimeout(() => setCopied(false), 2500);
+      } catch {
+        // Last resort: open prompt in a new window for manual copy
+        const win = window.open("", "_blank");
+        if (win) {
+          win.document.write(`<pre style="white-space:pre-wrap;font-family:monospace;padding:1em">${prompt.replace(/</g, "&lt;")}</pre>`);
+          win.document.close();
+        }
+      } finally {
+        document.body.removeChild(textarea);
       }
     }
   }
