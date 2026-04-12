@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { getAllSettings, upsertProviderSetting, type Provider } from "@/lib/db/settings";
 
-const VALID_PROVIDERS = new Set(["gecko", "labcom", "shelly", "blueconnect"]);
+const VALID_PROVIDERS = new Set(["gecko", "labcom", "shelly", "blueconnect", "spa"]);
 
 export async function GET() {
   return Response.json(await getAllSettings());

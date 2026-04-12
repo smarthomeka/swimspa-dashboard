@@ -7,11 +7,12 @@ export type ProviderConfig = {
   labcom: { apiUrl: string; apiKey: string };
   shelly: { host: string };
   blueconnect: { apiUrl: string; apiKey: string };
+  spa: { volumeLiters: string; location: string; covered: string }; // Spa basics for AI prompt
 };
 
 export type Provider = keyof ProviderConfig;
 
-const PROVIDERS: Provider[] = ["gecko", "labcom", "shelly", "blueconnect"];
+const PROVIDERS: Provider[] = ["gecko", "labcom", "shelly", "blueconnect", "spa"];
 
 export async function getAllSettings() {
   await ensureDb();

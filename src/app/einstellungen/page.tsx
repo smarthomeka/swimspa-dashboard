@@ -906,6 +906,97 @@ export default function EinstellungenPage() {
         </div>
       </section>
 
+      {/* ── Section: Spa-Grunddaten ── */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Thermometer className="h-5 w-5 text-primary" />
+          <h2 className="font-heading text-xl font-semibold">Spa-Grunddaten</h2>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Grundlegende Informationen über deinen Swim Spa — werden im KI-Prompt berücksichtigt.
+        </p>
+
+        <Card className="card-glow relative overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-cyan-500 to-transparent" />
+          <CardContent className="pt-6 space-y-4">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Volumen (Liter)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="100"
+                  value={settings.spa?.config?.volumeLiters ?? ""}
+                  onChange={(e) =>
+                    handleChange("spa", true, {
+                      ...(settings.spa?.config ?? {}),
+                      volumeLiters: e.target.value,
+                    })
+                  }
+                  placeholder="z.B. 7300"
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground tabular-nums placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-all"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Standort
+                </label>
+                <input
+                  type="text"
+                  value={settings.spa?.config?.location ?? ""}
+                  onChange={(e) =>
+                    handleChange("spa", true, {
+                      ...(settings.spa?.config ?? {}),
+                      location: e.target.value,
+                    })
+                  }
+                  placeholder="z.B. Terrasse, Garten, Innenraum"
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-all"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Abdeckung
+                </label>
+                <select
+                  value={settings.spa?.config?.covered ?? "covered"}
+                  onChange={(e) =>
+                    handleChange("spa", true, {
+                      ...(settings.spa?.config ?? {}),
+                      covered: e.target.value,
+                    })
+                  }
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-all"
+                >
+                  <option value="covered">Abgedeckt (mit Abdeckung)</option>
+                  <option value="open">Offen (ohne Abdeckung)</option>
+                  <option value="partial">Teilweise abgedeckt</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={() => handleSave("spa")}
+                disabled={savingProvider === "spa"}
+              >
+                {savingProvider === "spa" ? (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                ) : savedProvider === "spa" ? (
+                  <Check className="mr-1.5 h-4 w-4" />
+                ) : (
+                  <Save className="mr-1.5 h-4 w-4" />
+                )}
+                {savedProvider === "spa" ? "Gespeichert" : "Speichern"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
       {/* ── Section: Stromtarife ── */}
       <TariffSection />
 

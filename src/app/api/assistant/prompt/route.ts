@@ -6,6 +6,7 @@ import {
   getDosingResponses,
   getDailyEnergyConsumption,
 } from "@/lib/db/queries";
+import { getProviderSetting } from "@/lib/db/settings";
 
 const TARGET_RANGES: Record<string, { min: number; max: number; unit: string; label: string }> = {
   ph: { min: 7.2, max: 7.6, unit: "", label: "pH-Wert" },
@@ -64,10 +65,22 @@ export async function GET() {
     getReadings("blueconnect", "orp", sevenDaysAgo, 500),
   ]);
 
+  // ── Load spa settings ──
+  const spaSettings = await getProviderSetting("spa");
+  const volumeLiters = spaSettings.config.volumeLiters ? parseInt(spaSettings.config.volumeLiters) : 7300;
+  const location = spaSettings.config.location || "";
+  const covered = spaSettings.config.covered || "covered";
+
+  const coverageLabel =
+    covered === "open" ? "offen (ohne Abdeckung)" :
+    covered === "partial" ? "teilweise abgedeckt" :
+    "abgedeckt (mit Abdeckung)";
+
   const lines: string[] = [];
 
   // ── System context (so Claude knows what it's dealing with) ──
-  lines.push("Du bist mein Wasserchemie-Berater für meinen Armstark Lotus 460 SwimSpa (~7.300 Liter, Brom-basiert).");
+  const spaDesc = `meinen Armstark Lotus 460 SwimSpa (~${volumeLiters.toLocaleString("de-DE")} Liter, Brom-basiert, ${coverageLabel}${location ? `, Standort: ${location}` : ""})`;
+  lines.push(`Du bist mein Wasserchemie-Berater für ${spaDesc}.`);
   lines.push("");
   lines.push("Verfügbare Chemikalien:");
   lines.push("- tubhub Bromine Granules (Gramm) – Brom-Granulat");
