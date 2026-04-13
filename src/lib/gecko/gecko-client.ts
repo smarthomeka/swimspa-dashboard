@@ -1022,11 +1022,23 @@ function parseStatusBlock(
     ozone = { active: val === "ON" };
   }
 
-  // Read waterfall — directly from pack position
+  // Read waterfall — device status at byte 260 bit 7, fallback to UdWaterfall byte 363
   let waterfall: { active: boolean } | null = null;
   if (log?.Waterfall) {
     const val = readEnum(block, log.Waterfall.p, log.Waterfall.b, log.Waterfall.o);
-    waterfall = { active: val === "ON" };
+    if (val === "ON") {
+      waterfall = { active: true };
+    } else {
+      // Device status empty — check user demand (UdWaterfall at byte 363)
+      const UDWATERFALL_POS = 363;
+      const udWfVal = readByte(block, UDWATERFALL_POS);
+      waterfall = { active: udWfVal > 0 };
+    }
+  } else {
+    // No pack def — try UdWaterfall directly
+    const UDWATERFALL_POS = 363;
+    const udWfVal = readByte(block, UDWATERFALL_POS);
+    waterfall = { active: udWfVal > 0 };
   }
 
   // Read economy mode
@@ -1059,15 +1071,26 @@ function parseStatusBlock(
     slaveHeater = { active: val === "ON" };
   }
 
-  // Read lights — directly from pack position
+  // Read lights
+  // LI has no device status byte — read from UdLi (user demand) at byte 307
+  // L120 device status is at byte 260 bit 4, user demand at byte 308
   const lights: { id: string; active: boolean }[] = [];
-  if (log?.LI) {
-    const val = readEnum(block, log.LI.p, log.LI.b, log.LI.o);
-    lights.push({ id: "LI", active: val !== "OFF" && val !== "" });
-  }
+
+  // UdLi (main light user demand): byte 307, full byte, ["OFF", "HI"]
+  const UDLI_POS = 307;
+  const udLiVal = readByte(block, UDLI_POS);
+  lights.push({ id: "LI", active: udLiVal > 0 });
+
+  // L120 from device status byte 260 bit 4, fallback to UdL120 byte 308
   if (log?.L120) {
     const val = readEnum(block, log.L120.p, log.L120.b, log.L120.o);
-    lights.push({ id: "L120", active: val !== "OFF" && val !== "" });
+    if (val !== "OFF" && val !== "") {
+      lights.push({ id: "L120", active: true });
+    } else {
+      const UDL120_POS = 308;
+      const udL120Val = readByte(block, UDL120_POS);
+      lights.push({ id: "L120", active: udL120Val > 0 });
+    }
   }
 
   // Collect errors from known error keys

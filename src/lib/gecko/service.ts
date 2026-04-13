@@ -264,6 +264,18 @@ class GeckoService {
       });
     }
 
+    // Light (from UdLi user demand or L120 device status)
+    if (reading.lights.length > 0) {
+      const anyLightActive = reading.lights.some((l) => l.active);
+      rows.push({
+        source: "gecko",
+        metric: "light",
+        value: anyLightActive ? 1 : 0,
+        unit: "",
+        timestamp: now,
+      });
+    }
+
     // Ozone
     if (reading.ozone != null) {
       rows.push({

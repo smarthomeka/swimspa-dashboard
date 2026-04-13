@@ -139,6 +139,7 @@ export async function getLatestValues() {
   const pumpP2 = await getLatestReading("gecko", "pump_p2");
   const pumpP3 = await getLatestReading("gecko", "pump_p3");
   const circPump = await getLatestReading("gecko", "circulation_pump");
+  const light = await getLatestReading("gecko", "light");
   const ozone = await getLatestReading("gecko", "ozone");
   const waterfall = await getLatestReading("gecko", "waterfall");
   const econActive = await getLatestReading("gecko", "econ_active");
@@ -163,6 +164,7 @@ export async function getLatestValues() {
       p3: pumpP3 ? { mode: PUMP_MODES[pumpP3.value] ?? "OFF", active: pumpP3.value > 0, timestamp: pumpP3.timestamp } : null,
     },
     circulationPump: circPump ? { active: circPump.value === 1, timestamp: circPump.timestamp } : null,
+    light: light ? { active: light.value === 1, timestamp: light.timestamp } : null,
     ozone: ozone ? { active: ozone.value === 1, timestamp: ozone.timestamp } : null,
     waterfall: waterfall ? { active: waterfall.value === 1, timestamp: waterfall.timestamp } : null,
     econActive: econActive ? { active: econActive.value === 1, timestamp: econActive.timestamp } : null,
