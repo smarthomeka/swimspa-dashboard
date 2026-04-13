@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { getAllSettings, upsertProviderSetting, type Provider } from "@/lib/db/settings";
 import { geckoService } from "@/lib/gecko/service";
+import { clearSpaCache } from "@/lib/gecko/api";
 
 const VALID_PROVIDERS = new Set(["gecko", "labcom", "shelly", "blueconnect", "spa"]);
 
@@ -25,6 +26,11 @@ export async function PUT(request: NextRequest) {
   }
 
   await upsertProviderSetting(provider as Provider, enabled, config);
+
+  // When Gecko host changes, clear cached connection info
+  if (provider === "gecko" && config.host !== undefined) {
+    clearSpaCache();
+  }
 
   // When spa settings change (poll interval), restart Gecko polling with new interval
   if (provider === "spa" && config.pollInterval !== undefined) {

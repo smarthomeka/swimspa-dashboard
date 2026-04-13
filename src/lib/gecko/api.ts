@@ -9,9 +9,15 @@
 import {
   readSpaState as udpReadSpaState,
   discoverSpas as udpDiscoverSpas,
+  clearSpaCache as udpClearCache,
   type SpaReading,
   type DiscoveredSpa,
 } from "./gecko-client";
+
+/** Clear cached connection info (call when host/config changes). */
+export function clearSpaCache(): void {
+  udpClearCache();
+}
 
 // ── Types ────────────────────────────────────────────────────────
 

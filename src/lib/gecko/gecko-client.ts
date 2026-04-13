@@ -297,149 +297,188 @@ export const REMINDER_TYPES: Record<number, string> = {
   6: "Vision-Kartusche wechseln",
 };
 
+// ── Cached connection info ──────────────────────────────────────
+// Avoid re-doing full HELLO→AVERS→CURCH→SFILE handshake every poll.
+// The spa identity and pack versions never change at runtime.
+let cachedSpaInfo: {
+  host: string;
+  spaId: string;
+  spaName: string;
+  platformKey: string;
+  configVersion: number;
+  logVersion: number;
+  clientId: string;
+} | null = null;
+
+/** Clear cached connection info (e.g. when host changes). */
+export function clearSpaCache(): void {
+  cachedSpaInfo = null;
+}
+
+/** Minimum chunks needed for a valid status block (positions go up to ~320). */
+const MIN_VALID_CHUNKS = 10;
+
 export async function readSpaState(host: string): Promise<SpaReading> {
+  // Invalidate cache if host changed
+  if (cachedSpaInfo && cachedSpaInfo.host !== host) {
+    cachedSpaInfo = null;
+  }
+
   const transport = new UdpTransport();
   await transport.open();
   const seq = new SequenceCounter();
 
   try {
-    // Step 1: HELLO — locate the spa
-    // Discovery HELLO must be sent BARE (no PACKT wrapping!) per geckolib protocol.
-    const clientId = generateClientId();
-    const bareHello = Buffer.from("<HELLO>1</HELLO>", MESSAGE_ENCODING);
+    let spaId: string;
+    let spaName: string;
+    let platformKey: string;
+    let configVersion: number;
+    let logVersion: number;
+    let clientId: string;
 
-    let spaId = "";
-    let spaName = "Unbekannt";
+    if (cachedSpaInfo) {
+      // Use cached info — skip HELLO/AVERS/CURCH/SFILE handshake
+      ({ spaId, spaName, platformKey, configVersion, logVersion, clientId } = cachedSpaInfo);
 
-    const helloResult = await new Promise<{ spaId: string; spaName: string } | null>(
-      (resolve) => {
-        const timer = setTimeout(() => {
-          transport.removeHandler(handler);
-          resolve(null);
-        }, 10_000);
+      // Just register our client with the spa
+      const clientHello = Buffer.from(`<HELLO>${clientId}</HELLO>`, MESSAGE_ENCODING);
+      transport.send(clientHello, INTOUCH2_PORT, host);
+      await sleep(100);
+    } else {
+      // Full handshake — first connection or cache invalidated
+      clientId = generateClientId();
 
-        const handler: MessageHandler = (msg, rinfo) => {
-          if (rinfo.address !== host) return;
-          // Discovery responses are bare <HELLO>...</HELLO> (no PACKT)
-          const str = msg.toString(MESSAGE_ENCODING);
-          const match = str.match(/<HELLO>([\s\S]*?)<\/HELLO>/);
-          if (!match) return;
-          const text = match[1];
-          if (text === "1" || text.startsWith("IOS") || text.startsWith("AND")) return;
+      // Step 1: HELLO — locate the spa
+      const bareHello = Buffer.from("<HELLO>1</HELLO>", MESSAGE_ENCODING);
 
-          clearTimeout(timer);
-          transport.removeHandler(handler);
-          const parts = text.split("|");
-          resolve({
-            spaId: parts[0],
-            spaName: parts.length > 1 ? parts[1] : "Unnamed SPA",
-          });
-        };
+      spaId = "";
+      spaName = "Unbekannt";
 
-        transport.addHandler(handler);
+      const helloResult = await new Promise<{ spaId: string; spaName: string } | null>(
+        (resolve) => {
+          const timer = setTimeout(() => {
+            transport.removeHandler(handler);
+            resolve(null);
+          }, 10_000);
 
-        // Send bare HELLO to both unicast (target IP) and broadcast.
-        // Some Gecko devices only respond to broadcast HELLO.
-        const targets = [host, "255.255.255.255"];
-        for (let i = 0; i < 4; i++) {
-          setTimeout(() => {
-            for (const addr of targets) {
-              try {
-                transport.send(bareHello, INTOUCH2_PORT, addr);
-              } catch {
-                /* socket may be closed */
+          const handler: MessageHandler = (msg, rinfo) => {
+            if (rinfo.address !== host) return;
+            const str = msg.toString(MESSAGE_ENCODING);
+            const match = str.match(/<HELLO>([\s\S]*?)<\/HELLO>/);
+            if (!match) return;
+            const text = match[1];
+            if (text === "1" || text.startsWith("IOS") || text.startsWith("AND")) return;
+
+            clearTimeout(timer);
+            transport.removeHandler(handler);
+            const parts = text.split("|");
+            resolve({
+              spaId: parts[0],
+              spaName: parts.length > 1 ? parts[1] : "Unnamed SPA",
+            });
+          };
+
+          transport.addHandler(handler);
+
+          const targets = [host, "255.255.255.255"];
+          for (let i = 0; i < 4; i++) {
+            setTimeout(() => {
+              for (const addr of targets) {
+                try {
+                  transport.send(bareHello, INTOUCH2_PORT, addr);
+                } catch {
+                  /* socket may be closed */
+                }
               }
-            }
-          }, i * 1500);
+            }, i * 1500);
+          }
+        }
+      );
+
+      if (!helloResult) {
+        throw new Error(
+          `Kein Spa gefunden unter ${host} — Gerät nicht erreichbar auf UDP-Port ${INTOUCH2_PORT}. ` +
+          `Bitte prüfen: (1) IP-Adresse korrekt? (2) Gerät eingeschaltet? (3) Gleiche Netzwerk-Segment?`
+        );
+      }
+      spaId = helloResult.spaId;
+      spaName = helloResult.spaName;
+
+      // Step 1b: Register client
+      const clientHello = Buffer.from(`<HELLO>${clientId}</HELLO>`, MESSAGE_ENCODING);
+      transport.send(clientHello, INTOUCH2_PORT, host);
+      await sleep(200);
+
+      // Step 2: AVERS — get firmware version
+      const aversData = Buffer.alloc(6);
+      aversData.write("AVERS", 0, MESSAGE_ENCODING);
+      aversData.writeUInt8(seq.next(), 5);
+      const aversPacket = buildPacket(clientId, spaId, aversData);
+
+      await exchange(
+        transport,
+        aversPacket,
+        INTOUCH2_PORT,
+        host,
+        "SVERS",
+        PROTOCOL_TIMEOUT_MS
+      );
+
+      // Step 3: CURCH — get channel
+      const curchData = Buffer.alloc(6);
+      curchData.write("CURCH", 0, MESSAGE_ENCODING);
+      curchData.writeUInt8(seq.next(), 5);
+      const curchPacket = buildPacket(clientId, spaId, curchData);
+
+      await exchange(
+        transport,
+        curchPacket,
+        INTOUCH2_PORT,
+        host,
+        "CHCUR",
+        PROTOCOL_TIMEOUT_MS
+      );
+
+      // Step 4: SFILE — get config file info (platform key, versions)
+      const sfileData = Buffer.alloc(6);
+      sfileData.write("SFILE", 0, MESSAGE_ENCODING);
+      sfileData.writeUInt8(seq.next(), 5);
+      const sfilePacket = buildPacket(clientId, spaId, sfileData);
+
+      const filesResult = await exchange(
+        transport,
+        sfilePacket,
+        INTOUCH2_PORT,
+        host,
+        "FILES",
+        PROTOCOL_TIMEOUT_MS
+      );
+
+      const filesStr = filesResult.data.subarray(5).toString(MESSAGE_ENCODING);
+      const fileNames = filesStr.split(",").map((f) => f.replace(".xml", ""));
+      platformKey = "";
+      configVersion = 0;
+      logVersion = 0;
+
+      for (const name of fileNames) {
+        const parts = name.split("_");
+        if (parts.length >= 2) {
+          if (!platformKey) platformKey = parts[0];
+          const suffix = parts[parts.length - 1];
+          if (suffix.startsWith("C")) {
+            configVersion = parseInt(suffix.substring(1), 10);
+          } else if (suffix.startsWith("S")) {
+            logVersion = parseInt(suffix.substring(1), 10);
+          }
         }
       }
-    );
 
-    if (!helloResult) {
-      throw new Error(
-        `Kein Spa gefunden unter ${host} — Gerät nicht erreichbar auf UDP-Port ${INTOUCH2_PORT}. ` +
-        `Bitte prüfen: (1) IP-Adresse korrekt? (2) Gerät eingeschaltet? (3) Gleiche Netzwerk-Segment?`
-      );
+      // Cache the connection info for subsequent polls
+      cachedSpaInfo = { host, spaId, spaName, platformKey, configVersion, logVersion, clientId };
+      console.log(`[Gecko] Connected: "${spaName}" (${spaId}), platform=${platformKey}, cfg=${configVersion}, log=${logVersion}`);
     }
-    spaId = helloResult.spaId;
-    spaName = helloResult.spaName;
 
     const spaIdentifier = spaId;
-
-    // Step 1b: Register client — send bare <HELLO>{clientId}</HELLO> to the spa.
-    // This tells the spa who we are before we start sending PACKT-based commands.
-    const clientHello = Buffer.from(`<HELLO>${clientId}</HELLO>`, MESSAGE_ENCODING);
-    transport.send(clientHello, INTOUCH2_PORT, host);
-    await sleep(200);
-
-    // Step 2: AVERS — get firmware version
-    const aversData = Buffer.alloc(6);
-    aversData.write("AVERS", 0, MESSAGE_ENCODING);
-    aversData.writeUInt8(seq.next(), 5);
-    const aversPacket = buildPacket(clientId, spaIdentifier, aversData);
-
-    const versResult = await exchange(
-      transport,
-      aversPacket,
-      INTOUCH2_PORT,
-      host,
-      "SVERS",
-      PROTOCOL_TIMEOUT_MS
-    );
-    // Parse version (12 bytes after verb): en_build(2) en_major(1) en_minor(1) co_build(2) co_major(1) co_minor(1)
-    // We don't need version data, but the exchange confirms the connection
-
-    // Step 3: CURCH — get channel
-    const curchData = Buffer.alloc(6);
-    curchData.write("CURCH", 0, MESSAGE_ENCODING);
-    curchData.writeUInt8(seq.next(), 5);
-    const curchPacket = buildPacket(clientId, spaIdentifier, curchData);
-
-    await exchange(
-      transport,
-      curchPacket,
-      INTOUCH2_PORT,
-      host,
-      "CHCUR",
-      PROTOCOL_TIMEOUT_MS
-    );
-
-    // Step 4: SFILE — get config file info (platform key, versions)
-    const sfileData = Buffer.alloc(6);
-    sfileData.write("SFILE", 0, MESSAGE_ENCODING);
-    sfileData.writeUInt8(seq.next(), 5);
-    const sfilePacket = buildPacket(clientId, spaIdentifier, sfileData);
-
-    const filesResult = await exchange(
-      transport,
-      sfilePacket,
-      INTOUCH2_PORT,
-      host,
-      "FILES",
-      PROTOCOL_TIMEOUT_MS
-    );
-
-    // Parse FILES response: "FILES{comma-separated filenames}"
-    const filesStr = filesResult.data.subarray(5).toString(MESSAGE_ENCODING);
-    const fileNames = filesStr.split(",").map((f) => f.replace(".xml", ""));
-    // Extract platform key, config version, log version
-    // Format: "{platform}_C{config_ver}.xml,{platform}_S{log_ver}.xml"
-    let platformKey = "";
-    let configVersion = 0;
-    let logVersion = 0;
-
-    for (const name of fileNames) {
-      const parts = name.split("_");
-      if (parts.length >= 2) {
-        if (!platformKey) platformKey = parts[0];
-        const suffix = parts[parts.length - 1];
-        if (suffix.startsWith("C")) {
-          configVersion = parseInt(suffix.substring(1), 10);
-        } else if (suffix.startsWith("S")) {
-          logVersion = parseInt(suffix.substring(1), 10);
-        }
-      }
-    }
 
     // Step 5: STATU — request full status block
     const statuData = Buffer.alloc(10);
@@ -453,13 +492,15 @@ export async function readSpaState(host: string): Promise<SpaReading> {
     // Collect status block chunks
     const statusBlock = Buffer.alloc(1024);
     let receivedChunks = 0;
-    let expectedChunks = -1;
+    let maxChunkIndex = -1;
 
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         transport.removeHandler(handler);
-        if (receivedChunks > 0) {
-          resolve(); // Accept partial data
+        if (receivedChunks >= MIN_VALID_CHUNKS) {
+          resolve(); // Enough data to be useful
+        } else if (receivedChunks > 0) {
+          reject(new Error(`Incomplete status block: only ${receivedChunks} chunks received (need ${MIN_VALID_CHUNKS}+)`));
         } else {
           reject(new Error("Status block request timeout"));
         }
@@ -484,6 +525,7 @@ export async function readSpaState(host: string): Promise<SpaReading> {
           chunkData.copy(statusBlock, offset);
         }
         receivedChunks++;
+        if (index > maxChunkIndex) maxChunkIndex = index;
 
         // nextIndex === 0 means this is the last chunk
         if (nextIndex === 0) {
@@ -507,6 +549,15 @@ export async function readSpaState(host: string): Promise<SpaReading> {
         }
       }, 2000);
     });
+
+    // Validate we got enough data
+    if (receivedChunks < MIN_VALID_CHUNKS) {
+      // Invalidate cache so next attempt does full handshake
+      cachedSpaInfo = null;
+      throw new Error(`Incomplete status block: ${receivedChunks} chunks (need ${MIN_VALID_CHUNKS}+)`);
+    }
+
+    console.log(`[Gecko] Status block: ${receivedChunks} chunks received (max index: ${maxChunkIndex})`);
 
     // Step 6: Parse status block using pack definitions
     const reading = parseStatusBlock(statusBlock, platformKey, configVersion, logVersion, spaName, spaId);
@@ -550,6 +601,12 @@ export async function readSpaState(host: string): Promise<SpaReading> {
     }
 
     return reading;
+  } catch (err) {
+    // On connection errors, clear cache so next attempt does full handshake
+    if (cachedSpaInfo?.host === host) {
+      cachedSpaInfo = null;
+    }
+    throw err;
   } finally {
     transport.close();
   }
@@ -678,6 +735,10 @@ function parseStatusBlock(
   spaId: string
 ): SpaReading {
   const { cfg, log } = findPackDef(platformKey, configVersion, logVersion);
+
+  if (!cfg && !log) {
+    console.warn(`[Gecko] No pack definition found for platform="${platformKey}" cfg=${configVersion} log=${logVersion}`);
+  }
 
   // Determine temperature units
   let isCelsius = true;

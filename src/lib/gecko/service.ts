@@ -44,6 +44,7 @@ class GeckoService {
   private lastReading: GeckoSpaReading | null = null;
   private lastSyncAt: string | null = null;
   private lastError: string | null = null;
+  private consecutiveErrors: number = 0;
 
   /** Get current service status without triggering any connections. */
   async getStatus(): Promise<GeckoServiceStatus & { pollIntervalMs: number }> {
@@ -108,6 +109,7 @@ class GeckoService {
       const reading = await readSpaState(host);
       this.lastReading = reading;
       this.lastSyncAt = new Date().toISOString();
+      this.consecutiveErrors = 0;
 
       // Update stored spa name if we learned it
       if (reading.spaName) {
@@ -121,6 +123,7 @@ class GeckoService {
       await this.persistReading(reading);
       return reading;
     } catch (err) {
+      this.consecutiveErrors++;
       this.lastError = err instanceof Error ? err.message : String(err);
       throw err;
     }
@@ -146,10 +149,13 @@ class GeckoService {
       try {
         await this.syncOnce();
       } catch (err) {
-        console.error(
-          "[Gecko] Poll failed:",
-          err instanceof Error ? err.message : err
-        );
+        // Only log every 5th consecutive error to reduce noise
+        if (this.consecutiveErrors <= 2 || this.consecutiveErrors % 5 === 0) {
+          console.error(
+            `[Gecko] Poll failed (${this.consecutiveErrors}x):`,
+            err instanceof Error ? err.message : err
+          );
+        }
       }
     }, this.currentIntervalMs);
     console.log(`[Gecko] Polling started (every ${this.currentIntervalMs / 1000}s)`);
