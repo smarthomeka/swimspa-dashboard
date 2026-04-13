@@ -68,7 +68,6 @@ export async function seedMockData(force = false) {
         { source: "gecko", metric: "pump_status", value: anyActive ? 1 : 0, unit: "", timestamp },
         { source: "gecko", metric: "circulation_pump", value: Math.random() > 0.2 ? 1 : 0, unit: "", timestamp },
         { source: "gecko", metric: "ozone", value: hour >= 2 && hour <= 6 ? 1 : 0, unit: "", timestamp },
-        { source: "gecko", metric: "blower", value: isActiveHours && Math.random() > 0.9 ? 1 : 0, unit: "", timestamp },
         { source: "gecko", metric: "econ_active", value: hour >= 0 && hour <= 6 ? 1 : 0, unit: "", timestamp },
         { source: "gecko", metric: "heating_status", value: baseTemp < 37.5 ? 1 : 0, unit: "", timestamp },
         { source: "gecko", metric: "master_heater", value: baseTemp < 37.5 ? 1 : 0, unit: "", timestamp },

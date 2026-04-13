@@ -15,7 +15,7 @@ import {
   ResponsiveContainer,
   ReferenceArea,
 } from "recharts";
-import { Zap, TrendingDown, Receipt, AlertTriangle, Flame, Waves, Wind } from "lucide-react";
+import { Zap, TrendingDown, Receipt, AlertTriangle, Flame, Waves } from "lucide-react";
 
 interface EnergyDay {
   date: string;
@@ -45,7 +45,6 @@ interface PowerDetail {
   pumpP2: boolean;
   pumpP3: boolean;
   circPump: boolean;
-  blower: boolean;
 }
 
 /** Enriched data point for chart rendering */
@@ -62,7 +61,6 @@ const DEVICE_CONFIG = [
   { key: "pumpP2" as const, label: "Jet-Pumpe 2", shortLabel: "Jet 2", color: "#8b5cf6", icon: Waves },
   { key: "pumpP3" as const, label: "Swim-Jet", shortLabel: "Swim", color: "#06b6d4", icon: Waves },
   { key: "circPump" as const, label: "Zirkulation", shortLabel: "Zirk.", color: "#10b981", icon: Waves },
-  { key: "blower" as const, label: "Gebläse", shortLabel: "Gebl.", color: "#f59e0b", icon: Wind },
 ] as const;
 
 function formatDateLabel(d: string) {

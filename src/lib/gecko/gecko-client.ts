@@ -264,7 +264,6 @@ export type SpaReading = {
   tempUnit: string | null;
   pumps: { id: string; active: boolean; mode: string | null }[];
   circulationPump: { active: boolean } | null;
-  blower: { active: boolean } | null;
   ozone: { active: boolean } | null;
   waterfall: { active: boolean } | null;
   lights: { id: string; active: boolean }[];
@@ -1016,13 +1015,6 @@ function parseStatusBlock(
     circulationPump = { active: val === "ON" };
   }
 
-  // Read blower (BL) — directly from pack position
-  let blower: { active: boolean } | null = null;
-  if (log?.BL) {
-    const val = readEnum(block, log.BL.p, log.BL.b, log.BL.o);
-    blower = { active: val === "ON" };
-  }
-
   // Read ozone (O3) — directly from pack position
   let ozone: { active: boolean } | null = null;
   if (log?.O3) {
@@ -1105,7 +1097,6 @@ function parseStatusBlock(
     tempUnit: isCelsius ? "C" : "F",
     pumps,
     circulationPump,
-    blower,
     ozone,
     waterfall,
     lights,

@@ -264,17 +264,6 @@ class GeckoService {
       });
     }
 
-    // Blower
-    if (reading.blower != null) {
-      rows.push({
-        source: "gecko",
-        metric: "blower",
-        value: reading.blower.active ? 1 : 0,
-        unit: "",
-        timestamp: now,
-      });
-    }
-
     // Ozone
     if (reading.ozone != null) {
       rows.push({

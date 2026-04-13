@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { StatusCard } from "@/components/status-card";
 import {
   Thermometer, Droplets, FlaskConical, Gauge, Zap, Activity, Info,
-  Waves, Wind, Heater, Leaf, ShieldAlert, Sun, Lock,
+  Waves, Heater, Leaf, ShieldAlert, Sun, Lock,
 } from "lucide-react";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
@@ -52,7 +52,6 @@ interface LatestData {
   pumpStatus: { value: number; timestamp: string } | null;
   pumps: { p1: PumpData; p2: PumpData; p3: PumpData };
   circulationPump: BoolData;
-  blower: BoolData;
   ozone: BoolData;
   waterfall: BoolData;
   econActive: BoolData;
@@ -391,9 +390,7 @@ export default function OverviewPage() {
               {data.circulationPump && (
                 <DeviceIndicator label="Zirkulation" active={data.circulationPump.active} icon={Activity} />
               )}
-              {data.blower && (
-                <DeviceIndicator label="Gebläse" active={data.blower.active} icon={Wind} />
-              )}
+
               {data.ozone && (
                 <DeviceIndicator label="Ozon" active={data.ozone.active} icon={Sun} />
               )}

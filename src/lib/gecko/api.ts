@@ -48,7 +48,6 @@ export type GeckoSpaReading = {
   tempUnit: string | null;
   pumps: GeckoPumpState[];
   circulationPump: { active: boolean } | null;
-  blower: { active: boolean } | null;
   ozone: { active: boolean } | null;
   waterfall: { active: boolean } | null;
   lights: GeckoLightState[];
@@ -98,7 +97,6 @@ export async function readSpaState(host: string): Promise<GeckoSpaReading> {
     tempUnit: reading.tempUnit,
     pumps: reading.pumps,
     circulationPump: reading.circulationPump,
-    blower: reading.blower,
     ozone: reading.ozone,
     waterfall: reading.waterfall,
     lights: reading.lights,

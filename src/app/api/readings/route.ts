@@ -83,14 +83,13 @@ export async function GET(request: NextRequest) {
     const days = parseInt(searchParams.get("days") ?? "7", 10);
     const since = new Date();
     since.setDate(since.getDate() - days);
-    const [power, heating, pumpP1, pumpP2, pumpP3, circPump, blower] = await Promise.all([
+    const [power, heating, pumpP1, pumpP2, pumpP3, circPump] = await Promise.all([
       getReadings("shelly", "power_w", since, 10000),
       getReadings("gecko", "heating_status", since, 10000),
       getReadings("gecko", "pump_p1", since, 10000),
       getReadings("gecko", "pump_p2", since, 10000),
       getReadings("gecko", "pump_p3", since, 10000),
       getReadings("gecko", "circulation_pump", since, 10000),
-      getReadings("gecko", "blower", since, 10000),
     ]);
 
     // Helper: find nearest Gecko reading for a given timestamp
@@ -125,7 +124,6 @@ export async function GET(request: NextRequest) {
         pumpP2: findNearest(pumpP2, ts) > 0,
         pumpP3: findNearest(pumpP3, ts) > 0,
         circPump: findNearest(circPump, ts) === 1,
-        blower: findNearest(blower, ts) === 1,
       });
     }
     return NextResponse.json(result);
