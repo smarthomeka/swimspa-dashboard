@@ -90,8 +90,8 @@ const METRICS = [
     source: "gecko",
     metric: "temperature",
     color: "#ef4444",
-    safeRange: { y1: 36, y2: 39, label: "Idealbereich" },
-    domain: [34, 41] as [number, number],
+    safeRange: { y1: 26, y2: 40, label: "Normalbereich" },
+    domain: [20, 42] as [number, number],
   },
 ];
 

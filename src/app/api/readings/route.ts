@@ -76,6 +76,59 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(data);
   }
 
+  // Power readings enriched with Gecko device state at each timestamp
+  if (type === "power-detail") {
+    const days = parseInt(searchParams.get("days") ?? "7", 10);
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    const [power, heating, pumpP1, pumpP2, pumpP3, circPump, blower] = await Promise.all([
+      getReadings("shelly", "power_w", since, 10000),
+      getReadings("gecko", "heating_status", since, 10000),
+      getReadings("gecko", "pump_p1", since, 10000),
+      getReadings("gecko", "pump_p2", since, 10000),
+      getReadings("gecko", "pump_p3", since, 10000),
+      getReadings("gecko", "circulation_pump", since, 10000),
+      getReadings("gecko", "blower", since, 10000),
+    ]);
+
+    // Helper: find nearest Gecko reading for a given timestamp
+    function findNearest(arr: { value: number; timestamp: string }[], ts: number): number {
+      if (!arr.length) return 0;
+      let lo = 0, hi = arr.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (new Date(arr[mid].timestamp).getTime() < ts) lo = mid + 1;
+        else hi = mid;
+      }
+      // Check closest between lo and lo-1
+      if (lo > 0) {
+        const dLo = Math.abs(new Date(arr[lo].timestamp).getTime() - ts);
+        const dPrev = Math.abs(new Date(arr[lo - 1].timestamp).getTime() - ts);
+        return (dPrev < dLo ? arr[lo - 1] : arr[lo]).value;
+      }
+      return arr[lo].value;
+    }
+
+    // Downsample power data if too many points (keep max ~500 for chart)
+    const step = Math.max(1, Math.floor(power.length / 500));
+    const result = [];
+    for (let i = 0; i < power.length; i += step) {
+      const p = power[i];
+      const ts = new Date(p.timestamp).getTime();
+      result.push({
+        timestamp: p.timestamp,
+        powerW: Math.round(p.value),
+        heating: findNearest(heating, ts) === 1,
+        pumpP1: findNearest(pumpP1, ts) > 0,
+        pumpP2: findNearest(pumpP2, ts) > 0,
+        pumpP3: findNearest(pumpP3, ts) > 0,
+        circPump: findNearest(circPump, ts) === 1,
+        blower: findNearest(blower, ts) === 1,
+      });
+    }
+    return NextResponse.json(result);
+  }
+
   if (type === "energy-costs") {
     const days = parseInt(searchParams.get("days") ?? "30", 10);
     const since = new Date();

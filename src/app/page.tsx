@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { StatusCard } from "@/components/status-card";
 import {
   Thermometer, Droplets, FlaskConical, Gauge, Zap, Activity, Info,
@@ -11,6 +11,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { relativeTime, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+/** Auto-refresh interval in ms */
+const POLL_INTERVAL = 30_000;
 
 function phStatus(v: number): "ok" | "warn" | "critical" {
   if (v >= 7.2 && v <= 7.6) return "ok";
@@ -24,9 +27,18 @@ function bromineStatus(v: number): "ok" | "warn" | "critical" {
   return "critical";
 }
 
-function tempStatus(v: number): "ok" | "warn" | "critical" {
-  if (v >= 36 && v <= 39) return "ok";
-  if (v >= 34 && v <= 40) return "warn";
+// SwimSpa range: swim area 26–32°C, whirlpool 35–40°C — both are normal
+function tempStatus(v: number, setPoint?: number): "ok" | "warn" | "critical" {
+  // If we have a set point, compare against it (±2°C = OK, ±3°C = warn)
+  if (setPoint != null) {
+    const diff = Math.abs(v - setPoint);
+    if (diff <= 2) return "ok";
+    if (diff <= 3) return "warn";
+    return "critical";
+  }
+  // Fallback: wide SwimSpa range
+  if (v >= 26 && v <= 40) return "ok";
+  if (v >= 20 && v <= 42) return "warn";
   return "critical";
 }
 
@@ -109,25 +121,78 @@ function DeviceIndicator({ label, active, icon: Icon }: { label: string; active:
   );
 }
 
+/** Inline SVG sparkline for temperature history */
+function TempSparkline({ data }: { data: { value: number; timestamp: string }[] }) {
+  if (data.length < 2) return null;
+  const w = 200, h = 40, pad = 2;
+  const vals = data.map(d => d.value);
+  const min = Math.min(...vals) - 0.5;
+  const max = Math.max(...vals) + 0.5;
+  const range = max - min || 1;
+  const points = data.map((d, i) => {
+    const x = pad + (i / (data.length - 1)) * (w - pad * 2);
+    const y = h - pad - ((d.value - min) / range) * (h - pad * 2);
+    return `${x},${y}`;
+  });
+  const last = data[data.length - 1];
+  const lastX = w - pad;
+  const lastY = h - pad - ((last.value - min) / range) * (h - pad * 2);
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-10 mt-2 opacity-60" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#ef4444" stopOpacity="0.3" />
+          <stop offset="100%" stopColor="#ef4444" stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+      <polygon
+        points={`${pad},${h} ${points.join(" ")} ${w - pad},${h}`}
+        fill="url(#sparkGrad)"
+      />
+      <polyline
+        points={points.join(" ")}
+        fill="none"
+        stroke="#ef4444"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx={lastX} cy={lastY} r="2.5" fill="#ef4444" />
+    </svg>
+  );
+}
+
 export default function OverviewPage() {
   const [data, setData] = useState<LatestData | null>(null);
   const [geckoStatus, setGeckoStatus] = useState<GeckoStatus | null>(null);
+  const [tempHistory, setTempHistory] = useState<{ value: number; timestamp: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch("/api/readings?type=latest")
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then(setData)
-      .catch((err) => setError(err.message ?? "Verbindungsfehler"));
-
-    fetch("/api/gecko/status")
-      .then((r) => r.json())
-      .then(setGeckoStatus)
-      .catch(() => {});
+  const loadData = useCallback(async () => {
+    try {
+      const [latestRes, geckoRes, tempRes] = await Promise.all([
+        fetch("/api/readings?type=latest"),
+        fetch("/api/gecko/status").catch(() => null),
+        fetch("/api/readings?type=history&source=gecko&metric=temperature&days=1").catch(() => null),
+      ]);
+      if (!latestRes.ok) throw new Error(`HTTP ${latestRes.status}`);
+      setData(await latestRes.json());
+      if (geckoRes?.ok) setGeckoStatus(await geckoRes.json());
+      if (tempRes?.ok) {
+        const hist = await tempRes.json();
+        setTempHistory(Array.isArray(hist) ? hist : []);
+      }
+    } catch (err: any) {
+      setError(err.message ?? "Verbindungsfehler");
+    }
   }, []);
+
+  useEffect(() => {
+    loadData();
+    const interval = setInterval(loadData, POLL_INTERVAL);
+    return () => clearInterval(interval);
+  }, [loadData]);
 
   if (error) {
     return (
@@ -238,18 +303,22 @@ export default function OverviewPage() {
 
       {/* Tier 1: Hero metrics */}
       <div className="grid gap-5 sm:grid-cols-2">
-        <StatusCard
-          title="Wassertemperatur"
-          value={data.temperature ? formatNumber(data.temperature.value) : "–"}
-          unit="°C"
-          icon={Thermometer}
-          status={data.temperature ? tempStatus(data.temperature.value) : undefined}
-          subtitle={data.temperature
-            ? `${heatingLabel ? heatingLabel + " · " : ""}${data.setPoint ? `Soll: ${formatNumber(data.setPoint.value)}°C · ` : ""}${relativeTime(data.temperature.timestamp)}`
-            : undefined}
-          variant="hero"
-          accentColor="#ef4444"
-        />
+        <div>
+          <StatusCard
+            title="Wassertemperatur"
+            value={data.temperature ? formatNumber(data.temperature.value) : "–"}
+            unit="°C"
+            icon={Thermometer}
+            status={data.temperature ? tempStatus(data.temperature.value, data.setPoint?.value) : undefined}
+            subtitle={data.temperature
+              ? `${heatingLabel ? heatingLabel + " · " : ""}${data.setPoint ? `Soll: ${formatNumber(data.setPoint.value)}°C · ` : ""}${relativeTime(data.temperature.timestamp)}`
+              : undefined}
+            variant="hero"
+            accentColor="#ef4444"
+          >
+            <TempSparkline data={tempHistory} />
+          </StatusCard>
+        </div>
         <StatusCard
           title="pH-Wert"
           value={data.ph ? formatNumber(data.ph.value, 2) : "–"}

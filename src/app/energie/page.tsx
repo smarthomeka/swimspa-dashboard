@@ -42,6 +42,17 @@ interface EnergyCosts {
   breakdown: TariffBreakdown[];
 }
 
+interface PowerDetail {
+  timestamp: string;
+  powerW: number;
+  heating: boolean;
+  pumpP1: boolean;
+  pumpP2: boolean;
+  pumpP3: boolean;
+  circPump: boolean;
+  blower: boolean;
+}
+
 const TZ = "Europe/Vienna";
 
 function formatDateLabel(d: string) {
@@ -68,7 +79,7 @@ export default function EnergyPage() {
   const [dailyData, setDailyData] = useState<
     Array<{ date: string; kwh: number; avgW: number }>
   >([]);
-  const [powerData, setPowerData] = useState<Reading[]>([]);
+  const [powerData, setPowerData] = useState<PowerDetail[]>([]);
   const [costData, setCostData] = useState<EnergyCosts | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,9 +88,7 @@ export default function EnergyPage() {
       try {
         const [energyRes, powerRes, costRes] = await Promise.all([
           fetch(`/api/readings?type=energy&days=${days}`),
-          fetch(
-            `/api/readings?type=history&source=shelly&metric=power_w&days=${days}`
-          ),
+          fetch(`/api/readings?type=power-detail&days=${days}`),
           fetch(`/api/readings?type=energy-costs&days=${days}`),
         ]);
         if (!energyRes.ok || !powerRes.ok) throw new Error(`HTTP ${energyRes.status}`);
@@ -282,18 +291,34 @@ export default function EnergyPage() {
         </CardContent>
       </Card>
 
-      {/* Live power area chart */}
+      {/* Live power area chart with device state */}
       <Card className="card-glow">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <span className="h-2 w-2 rounded-full bg-red-500" />
             Leistungsverlauf (Watt) — letzte {days} Tage
           </CardTitle>
+          {/* Legend */}
+          <div className="flex flex-wrap gap-3 mt-1">
+            {[
+              { label: "Heizung", color: "#ef4444" },
+              { label: "Jet-Pumpe 1", color: "#3b82f6" },
+              { label: "Jet-Pumpe 2", color: "#8b5cf6" },
+              { label: "Swim-Jet", color: "#06b6d4" },
+              { label: "Zirkulation", color: "#10b981" },
+              { label: "Gebläse", color: "#f59e0b" },
+            ].map((item) => (
+              <span key={item.label} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: item.color }} />
+                {item.label}
+              </span>
+            ))}
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="h-48 sm:h-64 lg:h-72">
+          <div className="h-64 sm:h-80 lg:h-96">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={powerData}>
+              <AreaChart data={powerData} margin={{ bottom: 30 }}>
                 <defs>
                   <linearGradient id="powerGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#ef4444" stopOpacity={0.2} />
@@ -328,24 +353,49 @@ export default function EnergyPage() {
                   tick={{ fill: tickFill }}
                   axisLine={false}
                   tickLine={false}
-                  width={45}
+                  width={50}
+                  tickFormatter={(v) => `${v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v}`}
                 />
                 <Tooltip
-                  content={
-                    <ChartTooltip
-                      formatter={(v: number) => [
-                        `${Math.round(Number(v))} W`,
-                        "Leistung",
-                      ]}
-                    />
-                  }
-                  labelFormatter={(v) =>
-                    new Date(v).toLocaleString("de-DE", { timeZone: TZ })
-                  }
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload?.length) return null;
+                    const d = payload[0]?.payload as PowerDetail | undefined;
+                    if (!d) return null;
+                    const devices: string[] = [];
+                    if (d.heating) devices.push("Heizung");
+                    if (d.pumpP1) devices.push("Jet-Pumpe 1");
+                    if (d.pumpP2) devices.push("Jet-Pumpe 2");
+                    if (d.pumpP3) devices.push("Swim-Jet");
+                    if (d.circPump) devices.push("Zirkulation");
+                    if (d.blower) devices.push("Gebläse");
+                    return (
+                      <div className="rounded-xl border border-border/50 bg-card px-4 py-3 shadow-xl card-glow min-w-[180px]">
+                        <p className="text-[11px] font-medium text-muted-foreground">
+                          {new Date(label).toLocaleString("de-DE", { timeZone: TZ })}
+                        </p>
+                        <p className="mt-1 text-lg font-bold tabular-nums text-red-500">
+                          {d.powerW.toLocaleString("de-DE")} W
+                        </p>
+                        {devices.length > 0 ? (
+                          <div className="mt-2 border-t border-border/50 pt-2 space-y-0.5">
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Aktive Geräte</p>
+                            {devices.map((dev) => (
+                              <p key={dev} className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                {dev}
+                              </p>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-1 text-[10px] text-muted-foreground">Keine Geräte aktiv</p>
+                        )}
+                      </div>
+                    );
+                  }}
                 />
                 <Area
                   type="monotone"
-                  dataKey="value"
+                  dataKey="powerW"
                   stroke="#ef4444"
                   strokeWidth={1.5}
                   fill="url(#powerGrad)"
@@ -361,6 +411,41 @@ export default function EnergyPage() {
               </AreaChart>
             </ResponsiveContainer>
           </div>
+          {/* Device state timeline below chart */}
+          {powerData.length > 0 && (
+            <div className="mt-4 space-y-1.5">
+              {[
+                { key: "heating" as const, label: "Heizung", color: "#ef4444" },
+                { key: "pumpP1" as const, label: "Jet 1", color: "#3b82f6" },
+                { key: "pumpP2" as const, label: "Jet 2", color: "#8b5cf6" },
+                { key: "pumpP3" as const, label: "Swim", color: "#06b6d4" },
+                { key: "circPump" as const, label: "Zirk.", color: "#10b981" },
+              ].map(({ key, label, color }) => {
+                const hasAnyActive = powerData.some((d) => d[key]);
+                if (!hasAnyActive) return null;
+                return (
+                  <div key={key} className="flex items-center gap-2">
+                    <span className="text-[10px] font-medium text-muted-foreground w-10 text-right shrink-0">
+                      {label}
+                    </span>
+                    <div className="flex-1 h-2.5 rounded-full bg-muted/50 overflow-hidden flex">
+                      {powerData.map((d, i) => (
+                        <div
+                          key={i}
+                          className="h-full transition-colors"
+                          style={{
+                            flex: 1,
+                            backgroundColor: d[key] ? color : "transparent",
+                            opacity: d[key] ? 0.7 : 0,
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -13,6 +13,7 @@ interface StatusCardProps {
   subtitle?: string;
   variant?: "hero" | "standard" | "compact";
   accentColor?: string;
+  children?: React.ReactNode;
 }
 
 const statusConfig = {
@@ -57,6 +58,7 @@ export function StatusCard({
   subtitle,
   variant = "standard",
   accentColor,
+  children,
 }: StatusCardProps) {
   if (variant === "hero") {
     return (
@@ -116,6 +118,7 @@ export function StatusCard({
               </span>
             )}
           </div>
+          {children}
         </CardContent>
       </Card>
     );
