@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { getAllSettings, upsertProviderSetting, type Provider } from "@/lib/db/settings";
+import { geckoService } from "@/lib/gecko/service";
 
 const VALID_PROVIDERS = new Set(["gecko", "labcom", "shelly", "blueconnect", "spa"]);
 
@@ -24,5 +25,13 @@ export async function PUT(request: NextRequest) {
   }
 
   await upsertProviderSetting(provider as Provider, enabled, config);
+
+  // When spa settings change (poll interval), restart Gecko polling with new interval
+  if (provider === "spa" && config.pollInterval !== undefined) {
+    geckoService.restartPolling().catch((err) =>
+      console.error("[Settings] Gecko restart failed:", err instanceof Error ? err.message : err)
+    );
+  }
+
   return Response.json({ ok: true });
 }

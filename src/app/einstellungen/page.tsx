@@ -977,10 +977,10 @@ export default function EinstellungenPage() {
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Dashboard-Aktualisierung
+                  Gecko Abfrageintervall
                 </label>
                 <select
-                  value={settings.spa?.config?.pollInterval ?? "30"}
+                  value={settings.spa?.config?.pollInterval ?? "15"}
                   onChange={(e) =>
                     handleChange("spa", true, {
                       ...(settings.spa?.config ?? {}),
@@ -989,13 +989,15 @@ export default function EinstellungenPage() {
                   }
                   className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-all"
                 >
+                  <option value="5">Alle 5 Sekunden</option>
                   <option value="10">Alle 10 Sekunden</option>
+                  <option value="15">Alle 15 Sekunden</option>
                   <option value="30">Alle 30 Sekunden</option>
                   <option value="60">Jede Minute</option>
-                  <option value="120">Alle 2 Minuten</option>
-                  <option value="300">Alle 5 Minuten</option>
-                  <option value="0">Deaktiviert (manuell)</option>
                 </select>
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  Wie oft Pumpen, Heizung &amp; Temperatur vom Gecko in.Touch abgefragt werden
+                </p>
               </div>
             </div>
 

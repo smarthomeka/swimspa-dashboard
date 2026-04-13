@@ -36,27 +36,36 @@ export type GeckoServiceStatus = {
 
 // ── Singleton service ─────────────────────────────────────────────
 
-const POLL_INTERVAL_MS = 60_000; // 1 minute
+const DEFAULT_POLL_INTERVAL_MS = 15_000; // 15 seconds
 
 class GeckoService {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private currentIntervalMs: number = DEFAULT_POLL_INTERVAL_MS;
   private lastReading: GeckoSpaReading | null = null;
   private lastSyncAt: string | null = null;
   private lastError: string | null = null;
 
   /** Get current service status without triggering any connections. */
-  async getStatus(): Promise<GeckoServiceStatus> {
+  async getStatus(): Promise<GeckoServiceStatus & { pollIntervalMs: number }> {
     const setting = await getProviderSetting("gecko");
     const config = setting.config as unknown as GeckoStoredConfig;
     return {
       configured: setting.enabled && Boolean(config.host),
       host: config.host ?? null,
       polling: this.pollTimer !== null,
+      pollIntervalMs: this.currentIntervalMs,
       spaName: config.spaName ?? this.lastReading?.spaName ?? null,
       lastReading: this.lastReading,
       lastSyncAt: this.lastSyncAt,
       error: this.lastError,
     };
+  }
+
+  /** Read the poll interval from spa settings (seconds → ms). */
+  private async getConfiguredInterval(): Promise<number> {
+    const spaSetting = await getProviderSetting("spa");
+    const seconds = parseInt(spaSetting.config.pollInterval || "15", 10);
+    return seconds > 0 ? seconds * 1000 : DEFAULT_POLL_INTERVAL_MS;
   }
 
   /** Resolve the Gecko host from DB settings or GECKO_HOST env var. */
@@ -121,6 +130,8 @@ class GeckoService {
   async startPolling(): Promise<void> {
     if (this.pollTimer) return;
 
+    this.currentIntervalMs = await this.getConfiguredInterval();
+
     // Do an initial sync
     try {
       await this.syncOnce();
@@ -140,8 +151,17 @@ class GeckoService {
           err instanceof Error ? err.message : err
         );
       }
-    }, POLL_INTERVAL_MS);
-    console.log("[Gecko] Polling started (every 60s)");
+    }, this.currentIntervalMs);
+    console.log(`[Gecko] Polling started (every ${this.currentIntervalMs / 1000}s)`);
+  }
+
+  /** Restart polling with updated interval from settings. */
+  async restartPolling(): Promise<void> {
+    const wasPolling = this.pollTimer !== null;
+    this.stopPolling();
+    if (wasPolling) {
+      await this.startPolling();
+    }
   }
 
   /** Stop polling. */

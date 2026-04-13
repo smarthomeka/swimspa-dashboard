@@ -12,8 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { relativeTime, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-/** Default auto-refresh interval in ms (overridden by spa settings) */
-const DEFAULT_POLL_INTERVAL = 30_000;
+/** Default auto-refresh interval in ms (synced with Gecko polling setting) */
+const DEFAULT_POLL_INTERVAL = 15_000;
 
 function phStatus(v: number): "ok" | "warn" | "critical" {
   if (v >= 7.2 && v <= 7.6) return "ok";
