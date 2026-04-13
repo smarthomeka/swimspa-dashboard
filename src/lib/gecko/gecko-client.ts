@@ -315,9 +315,6 @@ export function clearSpaCache(): void {
   cachedSpaInfo = null;
 }
 
-/** Minimum chunks needed for a valid status block (positions go up to ~320). */
-const MIN_VALID_CHUNKS = 10;
-
 export async function readSpaState(host: string): Promise<SpaReading> {
   // Invalidate cache if host changed
   if (cachedSpaInfo && cachedSpaInfo.host !== host) {
@@ -329,117 +326,107 @@ export async function readSpaState(host: string): Promise<SpaReading> {
   const seq = new SequenceCounter();
 
   try {
-    let spaId: string;
-    let spaName: string;
-    let platformKey: string;
-    let configVersion: number;
-    let logVersion: number;
-    let clientId: string;
+    // Always do full handshake — the Gecko spa expects it per UDP session
+    // (each session uses a new socket, so the spa doesn't remember us).
+    // We only cache the platform/version info to avoid re-parsing FILES.
+    const clientId = cachedSpaInfo?.clientId ?? generateClientId();
 
-    if (cachedSpaInfo) {
-      // Use cached info — skip HELLO/AVERS/CURCH/SFILE handshake
-      ({ spaId, spaName, platformKey, configVersion, logVersion, clientId } = cachedSpaInfo);
+    // Step 1: HELLO — locate the spa
+    const bareHello = Buffer.from("<HELLO>1</HELLO>", MESSAGE_ENCODING);
 
-      // Just register our client with the spa
-      const clientHello = Buffer.from(`<HELLO>${clientId}</HELLO>`, MESSAGE_ENCODING);
-      transport.send(clientHello, INTOUCH2_PORT, host);
-      await sleep(100);
-    } else {
-      // Full handshake — first connection or cache invalidated
-      clientId = generateClientId();
+    let spaId = cachedSpaInfo?.spaId ?? "";
+    let spaName = cachedSpaInfo?.spaName ?? "Unbekannt";
+    let platformKey = cachedSpaInfo?.platformKey ?? "";
+    let configVersion = cachedSpaInfo?.configVersion ?? 0;
+    let logVersion = cachedSpaInfo?.logVersion ?? 0;
 
-      // Step 1: HELLO — locate the spa
-      const bareHello = Buffer.from("<HELLO>1</HELLO>", MESSAGE_ENCODING);
+    const helloResult = await new Promise<{ spaId: string; spaName: string } | null>(
+      (resolve) => {
+        const timer = setTimeout(() => {
+          transport.removeHandler(handler);
+          resolve(null);
+        }, 10_000);
 
-      spaId = "";
-      spaName = "Unbekannt";
+        const handler: MessageHandler = (msg, rinfo) => {
+          if (rinfo.address !== host) return;
+          const str = msg.toString(MESSAGE_ENCODING);
+          const match = str.match(/<HELLO>([\s\S]*?)<\/HELLO>/);
+          if (!match) return;
+          const text = match[1];
+          if (text === "1" || text.startsWith("IOS") || text.startsWith("AND")) return;
 
-      const helloResult = await new Promise<{ spaId: string; spaName: string } | null>(
-        (resolve) => {
-          const timer = setTimeout(() => {
-            transport.removeHandler(handler);
-            resolve(null);
-          }, 10_000);
+          clearTimeout(timer);
+          transport.removeHandler(handler);
+          const parts = text.split("|");
+          resolve({
+            spaId: parts[0],
+            spaName: parts.length > 1 ? parts[1] : "Unnamed SPA",
+          });
+        };
 
-          const handler: MessageHandler = (msg, rinfo) => {
-            if (rinfo.address !== host) return;
-            const str = msg.toString(MESSAGE_ENCODING);
-            const match = str.match(/<HELLO>([\s\S]*?)<\/HELLO>/);
-            if (!match) return;
-            const text = match[1];
-            if (text === "1" || text.startsWith("IOS") || text.startsWith("AND")) return;
+        transport.addHandler(handler);
 
-            clearTimeout(timer);
-            transport.removeHandler(handler);
-            const parts = text.split("|");
-            resolve({
-              spaId: parts[0],
-              spaName: parts.length > 1 ? parts[1] : "Unnamed SPA",
-            });
-          };
-
-          transport.addHandler(handler);
-
-          const targets = [host, "255.255.255.255"];
-          for (let i = 0; i < 4; i++) {
-            setTimeout(() => {
-              for (const addr of targets) {
-                try {
-                  transport.send(bareHello, INTOUCH2_PORT, addr);
-                } catch {
-                  /* socket may be closed */
-                }
+        const targets = [host, "255.255.255.255"];
+        for (let i = 0; i < 4; i++) {
+          setTimeout(() => {
+            for (const addr of targets) {
+              try {
+                transport.send(bareHello, INTOUCH2_PORT, addr);
+              } catch {
+                /* socket may be closed */
               }
-            }, i * 1500);
-          }
+            }
+          }, i * 1500);
         }
-      );
-
-      if (!helloResult) {
-        throw new Error(
-          `Kein Spa gefunden unter ${host} — Gerät nicht erreichbar auf UDP-Port ${INTOUCH2_PORT}. ` +
-          `Bitte prüfen: (1) IP-Adresse korrekt? (2) Gerät eingeschaltet? (3) Gleiche Netzwerk-Segment?`
-        );
       }
-      spaId = helloResult.spaId;
-      spaName = helloResult.spaName;
+    );
 
-      // Step 1b: Register client
-      const clientHello = Buffer.from(`<HELLO>${clientId}</HELLO>`, MESSAGE_ENCODING);
-      transport.send(clientHello, INTOUCH2_PORT, host);
-      await sleep(200);
-
-      // Step 2: AVERS — get firmware version
-      const aversData = Buffer.alloc(6);
-      aversData.write("AVERS", 0, MESSAGE_ENCODING);
-      aversData.writeUInt8(seq.next(), 5);
-      const aversPacket = buildPacket(clientId, spaId, aversData);
-
-      await exchange(
-        transport,
-        aversPacket,
-        INTOUCH2_PORT,
-        host,
-        "SVERS",
-        PROTOCOL_TIMEOUT_MS
+    if (!helloResult) {
+      throw new Error(
+        `Kein Spa gefunden unter ${host} — Gerät nicht erreichbar auf UDP-Port ${INTOUCH2_PORT}. ` +
+        `Bitte prüfen: (1) IP-Adresse korrekt? (2) Gerät eingeschaltet? (3) Gleiche Netzwerk-Segment?`
       );
+    }
+    spaId = helloResult.spaId;
+    spaName = helloResult.spaName;
 
-      // Step 3: CURCH — get channel
-      const curchData = Buffer.alloc(6);
-      curchData.write("CURCH", 0, MESSAGE_ENCODING);
-      curchData.writeUInt8(seq.next(), 5);
-      const curchPacket = buildPacket(clientId, spaId, curchData);
+    // Step 1b: Register client
+    const clientHello = Buffer.from(`<HELLO>${clientId}</HELLO>`, MESSAGE_ENCODING);
+    transport.send(clientHello, INTOUCH2_PORT, host);
+    await sleep(200);
 
-      await exchange(
-        transport,
-        curchPacket,
-        INTOUCH2_PORT,
-        host,
-        "CHCUR",
-        PROTOCOL_TIMEOUT_MS
-      );
+    // Step 2: AVERS — get firmware version
+    const aversData = Buffer.alloc(6);
+    aversData.write("AVERS", 0, MESSAGE_ENCODING);
+    aversData.writeUInt8(seq.next(), 5);
+    const aversPacket = buildPacket(clientId, spaId, aversData);
 
-      // Step 4: SFILE — get config file info (platform key, versions)
+    await exchange(
+      transport,
+      aversPacket,
+      INTOUCH2_PORT,
+      host,
+      "SVERS",
+      PROTOCOL_TIMEOUT_MS
+    );
+
+    // Step 3: CURCH — get channel
+    const curchData = Buffer.alloc(6);
+    curchData.write("CURCH", 0, MESSAGE_ENCODING);
+    curchData.writeUInt8(seq.next(), 5);
+    const curchPacket = buildPacket(clientId, spaId, curchData);
+
+    await exchange(
+      transport,
+      curchPacket,
+      INTOUCH2_PORT,
+      host,
+      "CHCUR",
+      PROTOCOL_TIMEOUT_MS
+    );
+
+    // Step 4: SFILE — only if we don't have cached platform info
+    if (!cachedSpaInfo) {
       const sfileData = Buffer.alloc(6);
       sfileData.write("SFILE", 0, MESSAGE_ENCODING);
       sfileData.writeUInt8(seq.next(), 5);
@@ -456,9 +443,6 @@ export async function readSpaState(host: string): Promise<SpaReading> {
 
       const filesStr = filesResult.data.subarray(5).toString(MESSAGE_ENCODING);
       const fileNames = filesStr.split(",").map((f) => f.replace(".xml", ""));
-      platformKey = "";
-      configVersion = 0;
-      logVersion = 0;
 
       for (const name of fileNames) {
         const parts = name.split("_");
@@ -473,7 +457,7 @@ export async function readSpaState(host: string): Promise<SpaReading> {
         }
       }
 
-      // Cache the connection info for subsequent polls
+      // Cache platform info for subsequent polls
       cachedSpaInfo = { host, spaId, spaName, platformKey, configVersion, logVersion, clientId };
       console.log(`[Gecko] Connected: "${spaName}" (${spaId}), platform=${platformKey}, cfg=${configVersion}, log=${logVersion}`);
     }
@@ -497,10 +481,8 @@ export async function readSpaState(host: string): Promise<SpaReading> {
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         transport.removeHandler(handler);
-        if (receivedChunks >= MIN_VALID_CHUNKS) {
-          resolve(); // Enough data to be useful
-        } else if (receivedChunks > 0) {
-          reject(new Error(`Incomplete status block: only ${receivedChunks} chunks received (need ${MIN_VALID_CHUNKS}+)`));
+        if (receivedChunks > 0) {
+          resolve(); // Accept partial data — better than nothing
         } else {
           reject(new Error("Status block request timeout"));
         }
@@ -550,14 +532,11 @@ export async function readSpaState(host: string): Promise<SpaReading> {
       }, 2000);
     });
 
-    // Validate we got enough data
-    if (receivedChunks < MIN_VALID_CHUNKS) {
-      // Invalidate cache so next attempt does full handshake
-      cachedSpaInfo = null;
-      throw new Error(`Incomplete status block: ${receivedChunks} chunks (need ${MIN_VALID_CHUNKS}+)`);
+    if (receivedChunks < 20) {
+      console.warn(`[Gecko] Partial status block: ${receivedChunks} chunks (may have incomplete device data)`);
+    } else {
+      console.log(`[Gecko] Status block: ${receivedChunks} chunks received (max index: ${maxChunkIndex})`);
     }
-
-    console.log(`[Gecko] Status block: ${receivedChunks} chunks received (max index: ${maxChunkIndex})`);
 
     // Step 6: Parse status block using pack definitions
     const reading = parseStatusBlock(statusBlock, platformKey, configVersion, logVersion, spaName, spaId);
@@ -601,12 +580,6 @@ export async function readSpaState(host: string): Promise<SpaReading> {
     }
 
     return reading;
-  } catch (err) {
-    // On connection errors, clear cache so next attempt does full handshake
-    if (cachedSpaInfo?.host === host) {
-      cachedSpaInfo = null;
-    }
-    throw err;
   } finally {
     transport.close();
   }
