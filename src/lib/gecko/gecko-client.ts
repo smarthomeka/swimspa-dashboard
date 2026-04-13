@@ -605,6 +605,7 @@ export async function readSpaStateDebug(host: string): Promise<{
   logVersion: number;
   receivedChunks: number;
   statusBlockHex: string;
+  deviceRegion: Record<string, { dec: number; hex: string; bin: string }>;
   pumpRegion: Record<string, number>;
   tempRegion: Record<string, number>;
   nonZeroBytes: { pos: number; val: number; hex: string }[];
@@ -738,9 +739,16 @@ export async function readSpaStateDebug(host: string): Promise<{
       if (b !== 0) nonZeroBytes.push({ pos: i, val: b, hex: `0x${b.toString(16).padStart(2, '0')}` });
     }
 
-    // Pump region: bytes 255-270
-    const pumpRegion: Record<string, number> = {};
-    for (let i = 255; i <= 270; i++) pumpRegion[`byte_${i}`] = statusBlock.readUInt8(i);
+    // Device region: bytes 250-270 with binary decomposition
+    const deviceRegion: Record<string, { dec: number; hex: string; bin: string }> = {};
+    for (let i = 250; i <= 270; i++) {
+      const b = statusBlock.readUInt8(i);
+      deviceRegion[`byte_${i}`] = {
+        dec: b,
+        hex: `0x${b.toString(16).padStart(2, '0')}`,
+        bin: `0b${b.toString(2).padStart(8, '0')}`,
+      };
+    }
 
     // Temp region: bytes 270-290
     const tempRegion: Record<string, number> = {};
@@ -751,7 +759,11 @@ export async function readSpaStateDebug(host: string): Promise<{
 
     const reading = parseStatusBlock(statusBlock, platformKey, configVersion, logVersion, spaName, spaId);
 
-    return { platformKey, configVersion, logVersion, receivedChunks, statusBlockHex, pumpRegion, tempRegion, nonZeroBytes, reading };
+    // Pump region summary (legacy format)
+    const pumpRegion: Record<string, number> = {};
+    for (let i = 255; i <= 270; i++) pumpRegion[`byte_${i}`] = statusBlock.readUInt8(i);
+
+    return { platformKey, configVersion, logVersion, receivedChunks, statusBlockHex, deviceRegion, pumpRegion, tempRegion, nonZeroBytes, reading };
   } finally {
     transport.close();
   }
@@ -885,35 +897,29 @@ function parseStatusBlock(
     console.warn(`[Gecko] No pack definition found for platform="${platformKey}" cfg=${configVersion} log=${logVersion}`);
   }
 
-  // ── Detect device status byte offset ─────────────────────────────
-  // Some spa firmware versions have device status bytes (pumps, heating, etc.)
-  // at positions that differ from the pack definition by a constant offset.
-  // We auto-detect this by finding where the pump/device data actually lives.
-  //
-  // The P1-P4 byte contains 2-bit packed pump modes in bits 0-7.
-  // The device byte (CP, BL, O3, etc.) is the byte before the pump byte.
-  // We scan positions around the pack-defined P1 byte for non-zero data.
-  let deviceOffset = 0; // offset to apply to ALL device status positions
+  // ── Detect pump byte offset ──────────────────────────────────────
+  // Some spa firmware versions have status bytes at positions that differ
+  // from the pack definition. We auto-detect the pump byte position
+  // (P1-P4: 2-bit packed values per pump) and use that offset for pumps.
+  let pumpOffset = 0;
+  let actualPumpPos = log?.P1?.p ?? 261;
   if (log?.P1) {
     const packPumpPos = log.P1.p;
-    // Check pack position and nearby positions for pump data
-    // The pump byte has 2-bit packed values — a characteristic pattern
     const packByte = readByte(block, packPumpPos);
 
     if (packByte === 0) {
-      // Pack position is zero — check nearby positions for pump-like data
-      for (const tryOffset of [-1, -2, -3, 1, 2]) {
+      for (const tryOffset of [-1, -2, -3, -4, 1, 2]) {
         const candidate = readByte(block, packPumpPos + tryOffset);
         if (candidate !== 0) {
-          // Verify it looks like pump data (2-bit packed values 0-2)
           let valid = true;
           for (let bit = 0; bit < 8; bit += 2) {
             const pumpVal = (candidate >> bit) & 0x03;
-            if (pumpVal > 2) { valid = false; break; } // Values 0=OFF, 1=HIGH, 2=LOW only
+            if (pumpVal > 2) { valid = false; break; }
           }
           if (valid) {
-            deviceOffset = tryOffset;
-            console.log(`[Gecko] Device byte offset detected: ${deviceOffset} (pack pos ${packPumpPos}, actual ${packPumpPos + deviceOffset}, byte=0x${candidate.toString(16)})`);
+            pumpOffset = tryOffset;
+            actualPumpPos = packPumpPos + tryOffset;
+            console.log(`[Gecko] Pump byte offset: ${pumpOffset} (pack ${packPumpPos} → actual ${actualPumpPos}, byte=0x${candidate.toString(16)})`);
             break;
           }
         }
@@ -921,8 +927,47 @@ function parseStatusBlock(
     }
   }
 
-  /** Apply device offset to a log accessor position. */
-  const devPos = (pos: number) => pos + deviceOffset;
+  // ── Detect device flags byte ──────────────────────────────────────
+  // The device flags byte (CP, BL, O3, Heating, heaters) may be at a
+  // DIFFERENT offset than the pump byte. In pack definitions it's always
+  // 1 byte before pumps, but in practice it can be further away.
+  // Scan backward from the actual pump byte for non-zero data.
+  const packDevicePos = log?.CP?.p ?? log?.Heating?.p ?? log?.MSTR_HEATER?.p ?? (log?.P1 ? log.P1.p - 1 : 260);
+  let deviceFlagPos = packDevicePos + pumpOffset; // default: same offset as pumps
+  let useDirectFlags = false;
+
+  // Check if the expected device byte (with pump offset) is zero
+  if (readByte(block, deviceFlagPos) === 0) {
+    // Scan backward from pump byte for the device flags byte
+    for (let i = actualPumpPos - 1; i >= actualPumpPos - 6; i--) {
+      if (i < 0) break;
+      const val = readByte(block, i);
+      if (val !== 0) {
+        deviceFlagPos = i;
+        useDirectFlags = true;
+        console.log(`[Gecko] Device flags byte found at ${i} (0x${val.toString(16).padStart(2, '0')} = 0b${val.toString(2).padStart(8, '0')}), pack expected ${packDevicePos}`);
+        break;
+      }
+    }
+  }
+
+  // When device flags are at an unexpected position, the bit layout may
+  // also differ from the pack definition. Based on observed firmware behavior,
+  // device flags use sequential single-bit packing:
+  //   bit 0: CP, bit 1: BL, bit 2: O3, bit 3: Heating/MSTR_HEATER, bit 4: SLV_HEATER
+  const DIRECT_FLAG_BITS = {
+    CP: 0,
+    BL: 1,
+    O3: 2,
+    Heating: 3,
+    MSTR_HEATER: 3,
+    SLV_HEATER: 4,
+  } as const;
+
+  /** Apply pump offset to a pump accessor position. */
+  const pumpPos = (pos: number) => pos + pumpOffset;
+  /** Apply device offset — uses pump offset for most positions. */
+  const devPos = (pos: number) => pos + pumpOffset;
 
   // Determine temperature units
   let isCelsius = true;
@@ -940,13 +985,13 @@ function parseStatusBlock(
   if (log?.DisplayedTempG) {
     // Try pack position first, then with offset
     let val = readTemp(block, log.DisplayedTempG.p, isCelsius);
-    if (val <= 0 && deviceOffset !== 0) {
+    if (val <= 0 && pumpOffset !== 0) {
       val = readTemp(block, devPos(log.DisplayedTempG.p), isCelsius);
     }
     if (val > 0) temperature = Math.round(val * 10) / 10;
   } else if (log?.RhWaterTemp) {
     let val = readTemp(block, log.RhWaterTemp.p, isCelsius);
-    if (val <= 0 && deviceOffset !== 0) {
+    if (val <= 0 && pumpOffset !== 0) {
       val = readTemp(block, devPos(log.RhWaterTemp.p), isCelsius);
     }
     if (val > 0) temperature = Math.round(val * 10) / 10;
@@ -954,7 +999,7 @@ function parseStatusBlock(
 
   if (log?.RealSetPointG) {
     let val = readTemp(block, log.RealSetPointG.p, isCelsius);
-    if (val <= 0 && deviceOffset !== 0) {
+    if (val <= 0 && pumpOffset !== 0) {
       val = readTemp(block, devPos(log.RealSetPointG.p), isCelsius);
     }
     if (val > 0) setPoint = Math.round(val * 10) / 10;
@@ -973,9 +1018,14 @@ function parseStatusBlock(
     if (val > 0) maxTemp = Math.round(val * 10) / 10;
   }
 
-  // Read heating status (apply device offset)
+  // Read heating status
   let heatingStatus: string | null = null;
-  if (log?.Heating) {
+  if (useDirectFlags) {
+    // Direct flag reading from detected device flags byte
+    const isHeating = readBool(block, deviceFlagPos, DIRECT_FLAG_BITS.Heating);
+    heatingStatus = isHeating ? "Heating" : "Idle";
+    console.log(`[Gecko] Heating (direct flag bit ${DIRECT_FLAG_BITS.Heating} @ byte ${deviceFlagPos}): ${isHeating}`);
+  } else if (log?.Heating) {
     const val = readEnum(block, devPos(log.Heating.p), log.Heating.b, log.Heating.o);
     heatingStatus = val === "Heating" ? "Heating" : "Idle";
   }
@@ -984,13 +1034,13 @@ function parseStatusBlock(
     if (cooling) heatingStatus = "Cooling";
   }
 
-  // Read pumps (apply device offset)
+  // Read pumps (apply pump offset — pumps have their own offset)
   const pumps: { id: string; active: boolean; mode: string | null }[] = [];
   const pumpKeys = ["P1", "P2", "P3", "P4", "P5"];
   for (const key of pumpKeys) {
     const acc = log?.[key];
     if (acc) {
-      const val = readEnum(block, devPos(acc.p), acc.b, acc.o);
+      const val = readEnum(block, pumpPos(acc.p), acc.b, acc.o);
       pumps.push({
         id: key,
         active: val !== "OFF" && val !== "",
@@ -999,28 +1049,36 @@ function parseStatusBlock(
     }
   }
 
-  // Read circulation pump (CP) — apply device offset
+  // Read circulation pump (CP)
   let circulationPump: { active: boolean } | null = null;
-  if (log?.CP) {
+  if (useDirectFlags) {
+    const cpActive = readBool(block, deviceFlagPos, DIRECT_FLAG_BITS.CP);
+    circulationPump = { active: cpActive };
+    console.log(`[Gecko] CP (direct flag bit ${DIRECT_FLAG_BITS.CP} @ byte ${deviceFlagPos}): ${cpActive}`);
+  } else if (log?.CP) {
     const val = readEnum(block, devPos(log.CP.p), log.CP.b, log.CP.o);
     circulationPump = { active: val === "ON" };
   }
 
-  // Read blower (BL) — apply device offset
+  // Read blower (BL)
   let blower: { active: boolean } | null = null;
-  if (log?.BL) {
+  if (useDirectFlags) {
+    blower = { active: readBool(block, deviceFlagPos, DIRECT_FLAG_BITS.BL) };
+  } else if (log?.BL) {
     const val = readEnum(block, devPos(log.BL.p), log.BL.b, log.BL.o);
     blower = { active: val === "ON" };
   }
 
-  // Read ozone (O3) — apply device offset
+  // Read ozone (O3)
   let ozone: { active: boolean } | null = null;
-  if (log?.O3) {
+  if (useDirectFlags) {
+    ozone = { active: readBool(block, deviceFlagPos, DIRECT_FLAG_BITS.O3) };
+  } else if (log?.O3) {
     const val = readEnum(block, devPos(log.O3.p), log.O3.b, log.O3.o);
     ozone = { active: val === "ON" };
   }
 
-  // Read waterfall — apply device offset
+  // Read waterfall
   let waterfall: { active: boolean } | null = null;
   if (log?.Waterfall) {
     const val = readEnum(block, devPos(log.Waterfall.p), log.Waterfall.b, log.Waterfall.o);
@@ -1045,14 +1103,18 @@ function parseStatusBlock(
     lockMode = readEnum(block, devPos(log.LockMode.p), log.LockMode.b, log.LockMode.o);
   }
 
-  // Read heaters — apply device offset
+  // Read heaters
   let masterHeater: { active: boolean } | null = null;
-  if (log?.MSTR_HEATER) {
+  if (useDirectFlags) {
+    masterHeater = { active: readBool(block, deviceFlagPos, DIRECT_FLAG_BITS.MSTR_HEATER) };
+  } else if (log?.MSTR_HEATER) {
     const val = readEnum(block, devPos(log.MSTR_HEATER.p), log.MSTR_HEATER.b, log.MSTR_HEATER.o);
     masterHeater = { active: val === "ON" };
   }
   let slaveHeater: { active: boolean } | null = null;
-  if (log?.SLV_HEATER) {
+  if (useDirectFlags) {
+    slaveHeater = { active: readBool(block, deviceFlagPos, DIRECT_FLAG_BITS.SLV_HEATER) };
+  } else if (log?.SLV_HEATER) {
     const val = readEnum(block, devPos(log.SLV_HEATER.p), log.SLV_HEATER.b, log.SLV_HEATER.o);
     slaveHeater = { active: val === "ON" };
   }
