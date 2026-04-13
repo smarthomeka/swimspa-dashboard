@@ -919,7 +919,7 @@ export default function EinstellungenPage() {
         <Card className="card-glow relative overflow-hidden">
           <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-cyan-500 to-transparent" />
           <CardContent className="pt-6 space-y-4">
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Volumen (Liter)
@@ -973,6 +973,28 @@ export default function EinstellungenPage() {
                   <option value="covered">Abgedeckt (mit Abdeckung)</option>
                   <option value="open">Offen (ohne Abdeckung)</option>
                   <option value="partial">Teilweise abgedeckt</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Dashboard-Aktualisierung
+                </label>
+                <select
+                  value={settings.spa?.config?.pollInterval ?? "30"}
+                  onChange={(e) =>
+                    handleChange("spa", true, {
+                      ...(settings.spa?.config ?? {}),
+                      pollInterval: e.target.value,
+                    })
+                  }
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-all"
+                >
+                  <option value="10">Alle 10 Sekunden</option>
+                  <option value="30">Alle 30 Sekunden</option>
+                  <option value="60">Jede Minute</option>
+                  <option value="120">Alle 2 Minuten</option>
+                  <option value="300">Alle 5 Minuten</option>
+                  <option value="0">Deaktiviert (manuell)</option>
                 </select>
               </div>
             </div>

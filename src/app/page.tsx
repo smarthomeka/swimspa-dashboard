@@ -12,8 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { relativeTime, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-/** Auto-refresh interval in ms */
-const POLL_INTERVAL = 30_000;
+/** Default auto-refresh interval in ms (overridden by spa settings) */
+const DEFAULT_POLL_INTERVAL = 30_000;
 
 function phStatus(v: number): "ok" | "warn" | "critical" {
   if (v >= 7.2 && v <= 7.6) return "ok";
@@ -167,6 +167,7 @@ export default function OverviewPage() {
   const [data, setData] = useState<LatestData | null>(null);
   const [geckoStatus, setGeckoStatus] = useState<GeckoStatus | null>(null);
   const [tempHistory, setTempHistory] = useState<{ value: number; timestamp: string }[]>([]);
+  const [pollInterval, setPollInterval] = useState(DEFAULT_POLL_INTERVAL);
   const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
@@ -177,7 +178,12 @@ export default function OverviewPage() {
         fetch("/api/readings?type=history&source=gecko&metric=temperature&days=1").catch(() => null),
       ]);
       if (!latestRes.ok) throw new Error(`HTTP ${latestRes.status}`);
-      setData(await latestRes.json());
+      const latestData = await latestRes.json();
+      setData(latestData);
+      // Update poll interval from settings (0 = disabled)
+      if (latestData.pollInterval !== undefined) {
+        setPollInterval(latestData.pollInterval * 1000);
+      }
       if (geckoRes?.ok) setGeckoStatus(await geckoRes.json());
       if (tempRes?.ok) {
         const hist = await tempRes.json();
@@ -190,9 +196,10 @@ export default function OverviewPage() {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, POLL_INTERVAL);
+    if (pollInterval <= 0) return; // polling disabled
+    const interval = setInterval(loadData, pollInterval);
     return () => clearInterval(interval);
-  }, [loadData]);
+  }, [loadData, pollInterval]);
 
   if (error) {
     return (

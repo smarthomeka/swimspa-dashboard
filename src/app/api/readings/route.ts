@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getLatestValues, getReadings, getDailyEnergyConsumption } from "@/lib/db/queries";
 import { seedMockData } from "@/lib/db/seed";
-import { getAllSettings } from "@/lib/db/settings";
+import { getAllSettings, getProviderSetting } from "@/lib/db/settings";
 import { labcomService } from "@/lib/labcom/service";
 import { shellyService } from "@/lib/shelly/service";
 import { geckoService } from "@/lib/gecko/service";
@@ -55,7 +55,9 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get("type") ?? "latest";
 
   if (type === "latest") {
-    return NextResponse.json({ ...await getLatestValues(), demoMode: await isDemoMode() });
+    const spaSettings = await getProviderSetting("spa");
+    const pollInterval = parseInt(spaSettings.config.pollInterval || "30", 10);
+    return NextResponse.json({ ...await getLatestValues(), demoMode: await isDemoMode(), pollInterval });
   }
 
   if (type === "history") {

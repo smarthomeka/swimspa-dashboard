@@ -13,20 +13,15 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  ReferenceArea,
 } from "recharts";
-import { Zap, TrendingDown, Receipt, AlertTriangle } from "lucide-react";
+import { Zap, TrendingDown, Receipt, AlertTriangle, Flame, Waves, Wind } from "lucide-react";
 
 interface EnergyDay {
   date: string;
   maxKwh: number;
   minKwh: number;
   avgPowerW: number;
-}
-
-interface Reading {
-  id: number;
-  value: number;
-  timestamp: string;
 }
 
 interface TariffBreakdown {
@@ -53,25 +48,41 @@ interface PowerDetail {
   blower: boolean;
 }
 
+/** Enriched data point for chart rendering */
+interface ChartPoint extends PowerDetail {
+  powerKw: number;
+  activeDevices: string[];
+}
+
 const TZ = "Europe/Vienna";
+
+const DEVICE_CONFIG = [
+  { key: "heating" as const, label: "Heizung", shortLabel: "Heizung", color: "#ef4444", icon: Flame },
+  { key: "pumpP1" as const, label: "Jet-Pumpe 1", shortLabel: "Jet 1", color: "#3b82f6", icon: Waves },
+  { key: "pumpP2" as const, label: "Jet-Pumpe 2", shortLabel: "Jet 2", color: "#8b5cf6", icon: Waves },
+  { key: "pumpP3" as const, label: "Swim-Jet", shortLabel: "Swim", color: "#06b6d4", icon: Waves },
+  { key: "circPump" as const, label: "Zirkulation", shortLabel: "Zirk.", color: "#10b981", icon: Waves },
+  { key: "blower" as const, label: "Gebläse", shortLabel: "Gebl.", color: "#f59e0b", icon: Wind },
+] as const;
 
 function formatDateLabel(d: string) {
   const dt = new Date(d);
   return dt.toLocaleDateString("de-DE", { timeZone: TZ, day: "2-digit", month: "2-digit" });
 }
 
-function ChartTooltip({ active, payload, label, formatter }: any) {
-  if (!active || !payload?.length) return null;
-  const [formattedValue, labelText] = formatter(payload[0].value);
-  return (
-    <div className="rounded-xl border border-border/50 bg-card px-4 py-2.5 shadow-xl card-glow">
-      <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
-      <p className="mt-0.5 text-sm font-bold tabular-nums">
-        {formattedValue}
-        <span className="ml-1.5 text-xs font-medium text-muted-foreground">{labelText}</span>
-      </p>
-    </div>
-  );
+function formatKw(watts: number): string {
+  return (watts / 1000).toFixed(1).replace(".", ",");
+}
+
+function formatTimeTick(v: string) {
+  const d = new Date(v);
+  return d.toLocaleString("de-DE", {
+    timeZone: TZ,
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export default function EnergyPage() {
@@ -79,7 +90,7 @@ export default function EnergyPage() {
   const [dailyData, setDailyData] = useState<
     Array<{ date: string; kwh: number; avgW: number }>
   >([]);
-  const [powerData, setPowerData] = useState<PowerDetail[]>([]);
+  const [chartData, setChartData] = useState<ChartPoint[]>([]);
   const [costData, setCostData] = useState<EnergyCosts | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -93,7 +104,7 @@ export default function EnergyPage() {
         ]);
         if (!energyRes.ok || !powerRes.ok) throw new Error(`HTTP ${energyRes.status}`);
         const energy: EnergyDay[] = await energyRes.json();
-        setPowerData(await powerRes.json());
+        const rawPower: PowerDetail[] = await powerRes.json();
         if (costRes.ok) setCostData(await costRes.json());
 
         const daily = energy.map((d, i) => ({
@@ -105,6 +116,16 @@ export default function EnergyPage() {
           avgW: Math.round(d.avgPowerW ?? 0),
         }));
         setDailyData(daily);
+
+        // Enrich power data with kW and active device list
+        const enriched: ChartPoint[] = rawPower.map((p) => {
+          const activeDevices: string[] = [];
+          for (const dev of DEVICE_CONFIG) {
+            if (p[dev.key]) activeDevices.push(dev.label);
+          }
+          return { ...p, powerKw: p.powerW / 1000, activeDevices };
+        });
+        setChartData(enriched);
         setError(null);
       } catch (err: any) {
         setError(err.message ?? "Verbindungsfehler");
@@ -116,9 +137,15 @@ export default function EnergyPage() {
   const totalKwh = dailyData.reduce((sum, d) => sum + d.kwh, 0);
   const avgDaily = dailyData.length > 0 ? totalKwh / dailyData.length : 0;
   const totalCost = costData?.totalCost ?? totalKwh * 0.3;
+  const peakKw = chartData.length > 0 ? Math.max(...chartData.map((d) => d.powerKw)) : 0;
 
   const gridStroke = "oklch(0.88 0.005 185)";
   const tickFill = "oklch(0.48 0.02 185)";
+
+  // Detect which devices have any activity in the data
+  const activeDeviceKeys = DEVICE_CONFIG.filter((dev) =>
+    chartData.some((d) => d[dev.key])
+  );
 
   if (error) {
     return (
@@ -262,22 +289,25 @@ export default function EnergyPage() {
                   width={40}
                 />
                 <Tooltip
-                  content={
-                    <ChartTooltip
-                      formatter={(v: number) => [
-                        `${Number(v).toFixed(1).replace(".", ",")} kWh`,
-                        "Verbrauch",
-                      ]}
-                    />
-                  }
-                  labelFormatter={(v) =>
-                    new Date(v).toLocaleDateString("de-DE", {
-                      timeZone: TZ,
-                      weekday: "short",
-                      day: "2-digit",
-                      month: "2-digit",
-                    })
-                  }
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload?.length) return null;
+                    const v = payload[0].value as number;
+                    return (
+                      <div className="rounded-xl border border-border/50 bg-card px-4 py-2.5 shadow-xl card-glow">
+                        <p className="text-[11px] font-medium text-muted-foreground">
+                          {new Date(label).toLocaleDateString("de-DE", {
+                            timeZone: TZ,
+                            weekday: "short",
+                            day: "2-digit",
+                            month: "2-digit",
+                          })}
+                        </p>
+                        <p className="mt-0.5 text-sm font-bold tabular-nums">
+                          {Number(v).toFixed(1).replace(".", ",")} kWh
+                        </p>
+                      </div>
+                    );
+                  }}
                 />
                 <Bar
                   dataKey="kwh"
@@ -291,37 +321,29 @@ export default function EnergyPage() {
         </CardContent>
       </Card>
 
-      {/* Live power area chart with device state */}
+      {/* Power consumption chart with device correlation */}
       <Card className="card-glow">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <span className="h-2 w-2 rounded-full bg-red-500" />
-            Leistungsverlauf (Watt) — letzte {days} Tage
-          </CardTitle>
-          {/* Legend */}
-          <div className="flex flex-wrap gap-3 mt-1">
-            {[
-              { label: "Heizung", color: "#ef4444" },
-              { label: "Jet-Pumpe 1", color: "#3b82f6" },
-              { label: "Jet-Pumpe 2", color: "#8b5cf6" },
-              { label: "Swim-Jet", color: "#06b6d4" },
-              { label: "Zirkulation", color: "#10b981" },
-              { label: "Gebläse", color: "#f59e0b" },
-            ].map((item) => (
-              <span key={item.label} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: item.color }} />
-                {item.label}
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Zap className="h-4 w-4 text-red-500" />
+              Leistungsverlauf — letzte {days} Tage
+            </CardTitle>
+            {peakKw > 0 && (
+              <span className="text-xs font-medium text-muted-foreground tabular-nums">
+                Peak: {formatKw(peakKw * 1000)} kW
               </span>
-            ))}
+            )}
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="h-64 sm:h-80 lg:h-96">
+        <CardContent className="space-y-5">
+          {/* Main power chart in kW */}
+          <div className="h-56 sm:h-72 lg:h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={powerData} margin={{ bottom: 30 }}>
+              <AreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
                 <defs>
-                  <linearGradient id="powerGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#ef4444" stopOpacity={0.2} />
+                  <linearGradient id="powerGradKw" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#ef4444" stopOpacity={0.15} />
                     <stop offset="100%" stopColor="#ef4444" stopOpacity={0.01} />
                   </linearGradient>
                 </defs>
@@ -329,19 +351,11 @@ export default function EnergyPage() {
                   horizontal={true}
                   vertical={false}
                   stroke={gridStroke}
+                  strokeDasharray="3 3"
                 />
                 <XAxis
                   dataKey="timestamp"
-                  tickFormatter={(v) => {
-                    const d = new Date(v);
-                    return d.toLocaleString("de-DE", {
-                      timeZone: TZ,
-                      day: "2-digit",
-                      month: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    });
-                  }}
+                  tickFormatter={formatTimeTick}
                   fontSize={10}
                   interval="preserveStartEnd"
                   tick={{ fill: tickFill }}
@@ -353,41 +367,47 @@ export default function EnergyPage() {
                   tick={{ fill: tickFill }}
                   axisLine={false}
                   tickLine={false}
-                  width={50}
-                  tickFormatter={(v) => `${v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v}`}
+                  width={42}
+                  tickFormatter={(v) => `${Number(v).toFixed(1)}`}
+                  label={{
+                    value: "kW",
+                    position: "top",
+                    offset: 10,
+                    style: { fontSize: 10, fill: tickFill, fontWeight: 600 },
+                  }}
                 />
                 <Tooltip
-                  content={({ active, payload, label }) => {
+                  content={({ active, payload }) => {
                     if (!active || !payload?.length) return null;
-                    const d = payload[0]?.payload as PowerDetail | undefined;
+                    const d = payload[0]?.payload as ChartPoint | undefined;
                     if (!d) return null;
-                    const devices: string[] = [];
-                    if (d.heating) devices.push("Heizung");
-                    if (d.pumpP1) devices.push("Jet-Pumpe 1");
-                    if (d.pumpP2) devices.push("Jet-Pumpe 2");
-                    if (d.pumpP3) devices.push("Swim-Jet");
-                    if (d.circPump) devices.push("Zirkulation");
-                    if (d.blower) devices.push("Gebläse");
                     return (
-                      <div className="rounded-xl border border-border/50 bg-card px-4 py-3 shadow-xl card-glow min-w-[180px]">
+                      <div className="rounded-xl border border-border/50 bg-card px-4 py-3 shadow-xl card-glow min-w-[200px]">
                         <p className="text-[11px] font-medium text-muted-foreground">
-                          {new Date(label).toLocaleString("de-DE", { timeZone: TZ })}
+                          {new Date(d.timestamp).toLocaleString("de-DE", { timeZone: TZ, weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                         </p>
-                        <p className="mt-1 text-lg font-bold tabular-nums text-red-500">
-                          {d.powerW.toLocaleString("de-DE")} W
-                        </p>
-                        {devices.length > 0 ? (
-                          <div className="mt-2 border-t border-border/50 pt-2 space-y-0.5">
-                            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Aktive Geräte</p>
-                            {devices.map((dev) => (
-                              <p key={dev} className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                                {dev}
-                              </p>
-                            ))}
+                        <div className="mt-1.5 flex items-baseline gap-1">
+                          <span className="text-xl font-bold tabular-nums">{d.powerKw.toFixed(2).replace(".", ",")}</span>
+                          <span className="text-sm font-medium text-muted-foreground">kW</span>
+                          <span className="ml-1 text-xs text-muted-foreground">({d.powerW.toLocaleString("de-DE")} W)</span>
+                        </div>
+                        {d.activeDevices.length > 0 ? (
+                          <div className="mt-2.5 border-t border-border/40 pt-2 space-y-1">
+                            {d.activeDevices.map((dev) => {
+                              const cfg = DEVICE_CONFIG.find((c) => c.label === dev);
+                              return (
+                                <div key={dev} className="flex items-center gap-2 text-xs">
+                                  <span
+                                    className="h-2 w-2 rounded-full shrink-0"
+                                    style={{ backgroundColor: cfg?.color ?? "#888" }}
+                                  />
+                                  <span className="font-medium">{dev}</span>
+                                </div>
+                              );
+                            })}
                           </div>
                         ) : (
-                          <p className="mt-1 text-[10px] text-muted-foreground">Keine Geräte aktiv</p>
+                          <p className="mt-2 text-[11px] text-muted-foreground/70">Standby — keine Geräte aktiv</p>
                         )}
                       </div>
                     );
@@ -395,55 +415,65 @@ export default function EnergyPage() {
                 />
                 <Area
                   type="monotone"
-                  dataKey="powerW"
+                  dataKey="powerKw"
                   stroke="#ef4444"
                   strokeWidth={1.5}
-                  fill="url(#powerGrad)"
+                  fill="url(#powerGradKw)"
                   dot={false}
                   activeDot={{
                     r: 4,
-                    stroke: "white",
+                    stroke: "#ef4444",
                     strokeWidth: 2,
-                    fill: "#ef4444",
+                    fill: "white",
                   }}
-                  animationDuration={800}
+                  animationDuration={600}
                 />
               </AreaChart>
             </ResponsiveContainer>
           </div>
-          {/* Device state timeline below chart */}
-          {powerData.length > 0 && (
-            <div className="mt-4 space-y-1.5">
-              {[
-                { key: "heating" as const, label: "Heizung", color: "#ef4444" },
-                { key: "pumpP1" as const, label: "Jet 1", color: "#3b82f6" },
-                { key: "pumpP2" as const, label: "Jet 2", color: "#8b5cf6" },
-                { key: "pumpP3" as const, label: "Swim", color: "#06b6d4" },
-                { key: "circPump" as const, label: "Zirk.", color: "#10b981" },
-              ].map(({ key, label, color }) => {
-                const hasAnyActive = powerData.some((d) => d[key]);
-                if (!hasAnyActive) return null;
-                return (
-                  <div key={key} className="flex items-center gap-2">
-                    <span className="text-[10px] font-medium text-muted-foreground w-10 text-right shrink-0">
-                      {label}
-                    </span>
-                    <div className="flex-1 h-2.5 rounded-full bg-muted/50 overflow-hidden flex">
-                      {powerData.map((d, i) => (
-                        <div
-                          key={i}
-                          className="h-full transition-colors"
-                          style={{
-                            flex: 1,
-                            backgroundColor: d[key] ? color : "transparent",
-                            opacity: d[key] ? 0.7 : 0,
-                          }}
-                        />
-                      ))}
-                    </div>
+
+          {/* Device activity timeline */}
+          {activeDeviceKeys.length > 0 && (
+            <div className="space-y-0.5">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-2">
+                Geräteaktivität
+              </p>
+              {activeDeviceKeys.map(({ key, shortLabel, label, color }) => (
+                <div key={key} className="flex items-center gap-2.5 group">
+                  <span
+                    className="text-[10px] font-semibold w-12 text-right shrink-0 truncate"
+                    style={{ color }}
+                    title={label}
+                  >
+                    {shortLabel}
+                  </span>
+                  <div className="flex-1 h-3 rounded bg-muted/30 overflow-hidden flex relative">
+                    {chartData.map((d, i) => (
+                      <div
+                        key={i}
+                        className="h-full"
+                        style={{
+                          flex: 1,
+                          backgroundColor: d[key] ? color : "transparent",
+                          opacity: d[key] ? 0.8 : 0,
+                        }}
+                      />
+                    ))}
                   </div>
-                );
-              })}
+                </div>
+              ))}
+              {/* Time axis labels for timeline */}
+              <div className="flex items-center gap-2.5">
+                <span className="w-12 shrink-0" />
+                <div className="flex-1 flex justify-between">
+                  {chartData.length > 0 && (
+                    <>
+                      <span className="text-[9px] text-muted-foreground/60">{formatTimeTick(chartData[0].timestamp)}</span>
+                      <span className="text-[9px] text-muted-foreground/60">{formatTimeTick(chartData[chartData.length - 1].timestamp)}</span>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </CardContent>
