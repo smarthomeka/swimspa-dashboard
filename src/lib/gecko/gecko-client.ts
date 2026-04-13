@@ -538,6 +538,16 @@ export async function readSpaState(host: string): Promise<SpaReading> {
       console.log(`[Gecko] Status block: ${receivedChunks} chunks received (max index: ${maxChunkIndex})`);
     }
 
+    // Debug: dump non-zero bytes in the status block to locate pump data
+    const nonZeroRanges: string[] = [];
+    for (let i = 250; i < 330 && i < statusBlock.length; i++) {
+      const b = statusBlock.readUInt8(i);
+      if (b !== 0) {
+        nonZeroRanges.push(`[${i}]=0x${b.toString(16).padStart(2, '0')}(${b})`);
+      }
+    }
+    console.log(`[Gecko] Non-zero bytes @250-330: ${nonZeroRanges.length > 0 ? nonZeroRanges.join(' ') : 'ALL ZERO'}`);
+
     // Step 6: Parse status block using pack definitions
     const reading = parseStatusBlock(statusBlock, platformKey, configVersion, logVersion, spaName, spaId);
 
@@ -580,6 +590,168 @@ export async function readSpaState(host: string): Promise<SpaReading> {
     }
 
     return reading;
+  } finally {
+    transport.close();
+  }
+}
+
+/**
+ * Debug version of readSpaState — returns raw status block bytes
+ * for diagnosing pump state parsing issues.
+ */
+export async function readSpaStateDebug(host: string): Promise<{
+  platformKey: string;
+  configVersion: number;
+  logVersion: number;
+  receivedChunks: number;
+  statusBlockHex: string;
+  pumpRegion: Record<string, number>;
+  tempRegion: Record<string, number>;
+  nonZeroBytes: { pos: number; val: number; hex: string }[];
+  reading: SpaReading;
+}> {
+  // Use the same connection logic but capture raw data
+  if (cachedSpaInfo && cachedSpaInfo.host !== host) {
+    cachedSpaInfo = null;
+  }
+
+  const transport = new UdpTransport();
+  await transport.open();
+  const seq = new SequenceCounter();
+
+  try {
+    const clientId = cachedSpaInfo?.clientId ?? generateClientId();
+    const bareHello = Buffer.from("<HELLO>1</HELLO>", MESSAGE_ENCODING);
+
+    let spaId = cachedSpaInfo?.spaId ?? "";
+    let spaName = cachedSpaInfo?.spaName ?? "Unbekannt";
+    let platformKey = cachedSpaInfo?.platformKey ?? "";
+    let configVersion = cachedSpaInfo?.configVersion ?? 0;
+    let logVersion = cachedSpaInfo?.logVersion ?? 0;
+
+    // Abbreviated handshake for debug
+    const helloResult = await new Promise<{ spaId: string; spaName: string } | null>(
+      (resolve) => {
+        const timer = setTimeout(() => { transport.removeHandler(handler); resolve(null); }, 10_000);
+        const handler: MessageHandler = (msg, rinfo) => {
+          if (rinfo.address !== host) return;
+          const str = msg.toString(MESSAGE_ENCODING);
+          const match = str.match(/<HELLO>([\s\S]*?)<\/HELLO>/);
+          if (!match) return;
+          const text = match[1];
+          if (text === "1" || text.startsWith("IOS") || text.startsWith("AND")) return;
+          clearTimeout(timer);
+          transport.removeHandler(handler);
+          const parts = text.split("|");
+          resolve({ spaId: parts[0], spaName: parts.length > 1 ? parts[1] : "Unnamed SPA" });
+        };
+        transport.addHandler(handler);
+        for (let i = 0; i < 3; i++) {
+          setTimeout(() => {
+            try { transport.send(bareHello, INTOUCH2_PORT, host); } catch {}
+            try { transport.send(bareHello, INTOUCH2_PORT, "255.255.255.255"); } catch {}
+          }, i * 1500);
+        }
+      }
+    );
+
+    if (!helloResult) throw new Error("Spa not reachable");
+    spaId = helloResult.spaId;
+    spaName = helloResult.spaName;
+
+    const clientHello = Buffer.from(`<HELLO>${clientId}</HELLO>`, MESSAGE_ENCODING);
+    transport.send(clientHello, INTOUCH2_PORT, host);
+    await sleep(200);
+
+    // AVERS
+    const aversData = Buffer.alloc(6);
+    aversData.write("AVERS", 0, MESSAGE_ENCODING);
+    aversData.writeUInt8(seq.next(), 5);
+    await exchange(transport, buildPacket(clientId, spaId, aversData), INTOUCH2_PORT, host, "SVERS", PROTOCOL_TIMEOUT_MS);
+
+    // CURCH
+    const curchData = Buffer.alloc(6);
+    curchData.write("CURCH", 0, MESSAGE_ENCODING);
+    curchData.writeUInt8(seq.next(), 5);
+    await exchange(transport, buildPacket(clientId, spaId, curchData), INTOUCH2_PORT, host, "CHCUR", PROTOCOL_TIMEOUT_MS);
+
+    // SFILE
+    if (!cachedSpaInfo) {
+      const sfileData = Buffer.alloc(6);
+      sfileData.write("SFILE", 0, MESSAGE_ENCODING);
+      sfileData.writeUInt8(seq.next(), 5);
+      const filesResult = await exchange(transport, buildPacket(clientId, spaId, sfileData), INTOUCH2_PORT, host, "FILES", PROTOCOL_TIMEOUT_MS);
+      const filesStr = filesResult.data.subarray(5).toString(MESSAGE_ENCODING);
+      for (const name of filesStr.split(",").map(f => f.replace(".xml", ""))) {
+        const parts = name.split("_");
+        if (parts.length >= 2) {
+          if (!platformKey) platformKey = parts[0];
+          const suffix = parts[parts.length - 1];
+          if (suffix.startsWith("C")) configVersion = parseInt(suffix.substring(1), 10);
+          else if (suffix.startsWith("S")) logVersion = parseInt(suffix.substring(1), 10);
+        }
+      }
+      cachedSpaInfo = { host, spaId, spaName, platformKey, configVersion, logVersion, clientId };
+    }
+
+    // STATU
+    const statuData = Buffer.alloc(10);
+    statuData.write("STATU", 0, MESSAGE_ENCODING);
+    statuData.writeUInt8(seq.next(), 5);
+    statuData.writeUInt16BE(0, 6);
+    statuData.writeUInt16BE(1024, 8);
+    const statuPacket = buildPacket(clientId, spaId, statuData);
+
+    const statusBlock = Buffer.alloc(1024);
+    let receivedChunks = 0;
+
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        transport.removeHandler(handler);
+        receivedChunks > 0 ? resolve() : reject(new Error("Status block timeout"));
+      }, CONNECTION_TIMEOUT_MS);
+
+      const handler: MessageHandler = (msg, rinfo) => {
+        if (rinfo.address !== host) return;
+        const parsed = parsePacket(msg);
+        if (!parsed) return;
+        if (parsed.data.subarray(0, 5).toString(MESSAGE_ENCODING) !== "STATV") return;
+        const index = parsed.data.readUInt8(5);
+        const nextIndex = parsed.data.readUInt8(6);
+        const dataLen = parsed.data.readUInt8(7);
+        const chunkData = parsed.data.subarray(8, 8 + dataLen);
+        const offset = index * dataLen;
+        if (offset + chunkData.length <= statusBlock.length) chunkData.copy(statusBlock, offset);
+        receivedChunks++;
+        if (nextIndex === 0) { clearTimeout(timer); transport.removeHandler(handler); resolve(); }
+      };
+
+      transport.addHandler(handler);
+      transport.send(statuPacket, INTOUCH2_PORT, host);
+      setTimeout(() => { if (receivedChunks === 0) try { transport.send(statuPacket, INTOUCH2_PORT, host); } catch {} }, 2000);
+    });
+
+    // Collect all non-zero bytes in range 0-400
+    const nonZeroBytes: { pos: number; val: number; hex: string }[] = [];
+    for (let i = 0; i < Math.min(400, statusBlock.length); i++) {
+      const b = statusBlock.readUInt8(i);
+      if (b !== 0) nonZeroBytes.push({ pos: i, val: b, hex: `0x${b.toString(16).padStart(2, '0')}` });
+    }
+
+    // Pump region: bytes 255-270
+    const pumpRegion: Record<string, number> = {};
+    for (let i = 255; i <= 270; i++) pumpRegion[`byte_${i}`] = statusBlock.readUInt8(i);
+
+    // Temp region: bytes 270-290
+    const tempRegion: Record<string, number> = {};
+    for (let i = 270; i <= 290; i++) tempRegion[`byte_${i}`] = statusBlock.readUInt8(i);
+
+    // Full hex of range 250-330
+    const statusBlockHex = statusBlock.subarray(250, 330).toString('hex');
+
+    const reading = parseStatusBlock(statusBlock, platformKey, configVersion, logVersion, spaName, spaId);
+
+    return { platformKey, configVersion, logVersion, receivedChunks, statusBlockHex, pumpRegion, tempRegion, nonZeroBytes, reading };
   } finally {
     transport.close();
   }
@@ -713,6 +885,45 @@ function parseStatusBlock(
     console.warn(`[Gecko] No pack definition found for platform="${platformKey}" cfg=${configVersion} log=${logVersion}`);
   }
 
+  // ── Detect device status byte offset ─────────────────────────────
+  // Some spa firmware versions have device status bytes (pumps, heating, etc.)
+  // at positions that differ from the pack definition by a constant offset.
+  // We auto-detect this by finding where the pump/device data actually lives.
+  //
+  // The P1-P4 byte contains 2-bit packed pump modes in bits 0-7.
+  // The device byte (CP, BL, O3, etc.) is the byte before the pump byte.
+  // We scan positions around the pack-defined P1 byte for non-zero data.
+  let deviceOffset = 0; // offset to apply to ALL device status positions
+  if (log?.P1) {
+    const packPumpPos = log.P1.p;
+    // Check pack position and nearby positions for pump data
+    // The pump byte has 2-bit packed values — a characteristic pattern
+    const packByte = readByte(block, packPumpPos);
+
+    if (packByte === 0) {
+      // Pack position is zero — check nearby positions for pump-like data
+      for (const tryOffset of [-1, -2, -3, 1, 2]) {
+        const candidate = readByte(block, packPumpPos + tryOffset);
+        if (candidate !== 0) {
+          // Verify it looks like pump data (2-bit packed values 0-2)
+          let valid = true;
+          for (let bit = 0; bit < 8; bit += 2) {
+            const pumpVal = (candidate >> bit) & 0x03;
+            if (pumpVal > 2) { valid = false; break; } // Values 0=OFF, 1=HIGH, 2=LOW only
+          }
+          if (valid) {
+            deviceOffset = tryOffset;
+            console.log(`[Gecko] Device byte offset detected: ${deviceOffset} (pack pos ${packPumpPos}, actual ${packPumpPos + deviceOffset}, byte=0x${candidate.toString(16)})`);
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  /** Apply device offset to a log accessor position. */
+  const devPos = (pos: number) => pos + deviceOffset;
+
   // Determine temperature units
   let isCelsius = true;
   if (cfg?.TempUnits) {
@@ -720,22 +931,32 @@ function parseStatusBlock(
     isCelsius = units === "C";
   }
 
-  // Read temperature values
+  // Read temperature values (temperature positions are NOT affected by device offset)
   let temperature: number | null = null;
   let setPoint: number | null = null;
   let minTemp: number | null = null;
   let maxTemp: number | null = null;
 
   if (log?.DisplayedTempG) {
-    const val = readTemp(block, log.DisplayedTempG.p, isCelsius);
+    // Try pack position first, then with offset
+    let val = readTemp(block, log.DisplayedTempG.p, isCelsius);
+    if (val <= 0 && deviceOffset !== 0) {
+      val = readTemp(block, devPos(log.DisplayedTempG.p), isCelsius);
+    }
     if (val > 0) temperature = Math.round(val * 10) / 10;
   } else if (log?.RhWaterTemp) {
-    const val = readTemp(block, log.RhWaterTemp.p, isCelsius);
+    let val = readTemp(block, log.RhWaterTemp.p, isCelsius);
+    if (val <= 0 && deviceOffset !== 0) {
+      val = readTemp(block, devPos(log.RhWaterTemp.p), isCelsius);
+    }
     if (val > 0) temperature = Math.round(val * 10) / 10;
   }
 
   if (log?.RealSetPointG) {
-    const val = readTemp(block, log.RealSetPointG.p, isCelsius);
+    let val = readTemp(block, log.RealSetPointG.p, isCelsius);
+    if (val <= 0 && deviceOffset !== 0) {
+      val = readTemp(block, devPos(log.RealSetPointG.p), isCelsius);
+    }
     if (val > 0) setPoint = Math.round(val * 10) / 10;
   } else if (cfg?.SetpointG) {
     const val = readTemp(block, cfg.SetpointG.p, isCelsius);
@@ -752,24 +973,24 @@ function parseStatusBlock(
     if (val > 0) maxTemp = Math.round(val * 10) / 10;
   }
 
-  // Read heating status
+  // Read heating status (apply device offset)
   let heatingStatus: string | null = null;
   if (log?.Heating) {
-    const val = readEnum(block, log.Heating.p, log.Heating.b, log.Heating.o);
+    const val = readEnum(block, devPos(log.Heating.p), log.Heating.b, log.Heating.o);
     heatingStatus = val === "Heating" ? "Heating" : "Idle";
   }
   if (log?.CoolingDown) {
-    const cooling = readBool(block, log.CoolingDown.p, log.CoolingDown.b ?? 0);
+    const cooling = readBool(block, devPos(log.CoolingDown.p), log.CoolingDown.b ?? 0);
     if (cooling) heatingStatus = "Cooling";
   }
 
-  // Read pumps
+  // Read pumps (apply device offset)
   const pumps: { id: string; active: boolean; mode: string | null }[] = [];
   const pumpKeys = ["P1", "P2", "P3", "P4", "P5"];
   for (const key of pumpKeys) {
     const acc = log?.[key];
     if (acc) {
-      const val = readEnum(block, acc.p, acc.b, acc.o);
+      const val = readEnum(block, devPos(acc.p), acc.b, acc.o);
       pumps.push({
         id: key,
         active: val !== "OFF" && val !== "",
@@ -778,78 +999,78 @@ function parseStatusBlock(
     }
   }
 
-  // Read circulation pump (CP)
+  // Read circulation pump (CP) — apply device offset
   let circulationPump: { active: boolean } | null = null;
   if (log?.CP) {
-    const val = readEnum(block, log.CP.p, log.CP.b, log.CP.o);
+    const val = readEnum(block, devPos(log.CP.p), log.CP.b, log.CP.o);
     circulationPump = { active: val === "ON" };
   }
 
-  // Read blower (BL)
+  // Read blower (BL) — apply device offset
   let blower: { active: boolean } | null = null;
   if (log?.BL) {
-    const val = readEnum(block, log.BL.p, log.BL.b, log.BL.o);
+    const val = readEnum(block, devPos(log.BL.p), log.BL.b, log.BL.o);
     blower = { active: val === "ON" };
   }
 
-  // Read ozone (O3)
+  // Read ozone (O3) — apply device offset
   let ozone: { active: boolean } | null = null;
   if (log?.O3) {
-    const val = readEnum(block, log.O3.p, log.O3.b, log.O3.o);
+    const val = readEnum(block, devPos(log.O3.p), log.O3.b, log.O3.o);
     ozone = { active: val === "ON" };
   }
 
-  // Read waterfall
+  // Read waterfall — apply device offset
   let waterfall: { active: boolean } | null = null;
   if (log?.Waterfall) {
-    const val = readEnum(block, log.Waterfall.p, log.Waterfall.b, log.Waterfall.o);
+    const val = readEnum(block, devPos(log.Waterfall.p), log.Waterfall.b, log.Waterfall.o);
     waterfall = { active: val === "ON" };
   }
 
-  // Read economy mode
+  // Read economy mode — apply device offset
   let econActive = false;
   if (log?.EconActive) {
-    econActive = readBool(block, log.EconActive.p, log.EconActive.b ?? 0);
+    econActive = readBool(block, devPos(log.EconActive.p), log.EconActive.b ?? 0);
   }
 
-  // Read quiet/standby state
+  // Read quiet/standby state — apply device offset
   let quietState: string | null = null;
   if (log?.QuietState) {
-    quietState = readEnum(block, log.QuietState.p, log.QuietState.b, log.QuietState.o);
+    quietState = readEnum(block, devPos(log.QuietState.p), log.QuietState.b, log.QuietState.o);
   }
 
-  // Read lock mode
+  // Read lock mode — apply device offset
   let lockMode: string | null = null;
   if (log?.LockMode) {
-    lockMode = readEnum(block, log.LockMode.p, log.LockMode.b, log.LockMode.o);
+    lockMode = readEnum(block, devPos(log.LockMode.p), log.LockMode.b, log.LockMode.o);
   }
 
-  // Read heaters
+  // Read heaters — apply device offset
   let masterHeater: { active: boolean } | null = null;
   if (log?.MSTR_HEATER) {
-    const val = readEnum(block, log.MSTR_HEATER.p, log.MSTR_HEATER.b, log.MSTR_HEATER.o);
+    const val = readEnum(block, devPos(log.MSTR_HEATER.p), log.MSTR_HEATER.b, log.MSTR_HEATER.o);
     masterHeater = { active: val === "ON" };
   }
   let slaveHeater: { active: boolean } | null = null;
   if (log?.SLV_HEATER) {
-    const val = readEnum(block, log.SLV_HEATER.p, log.SLV_HEATER.b, log.SLV_HEATER.o);
+    const val = readEnum(block, devPos(log.SLV_HEATER.p), log.SLV_HEATER.b, log.SLV_HEATER.o);
     slaveHeater = { active: val === "ON" };
   }
 
-  // Read lights
+  // Read lights — apply device offset
   const lights: { id: string; active: boolean }[] = [];
   const lightAcc = log?.LI;
   if (lightAcc) {
-    const val = readEnum(block, lightAcc.p, lightAcc.b, lightAcc.o);
+    const val = readEnum(block, devPos(lightAcc.p), lightAcc.b, lightAcc.o);
     lights.push({ id: "LI", active: val !== "OFF" && val !== "" });
   }
   const l120Acc = log?.L120;
   if (l120Acc) {
-    const val = readEnum(block, l120Acc.p, l120Acc.b, l120Acc.o);
+    const val = readEnum(block, devPos(l120Acc.p), l120Acc.b, l120Acc.o);
     lights.push({ id: "L120", active: val !== "OFF" && val !== "" });
   }
 
-  // Collect errors from known error keys
+  // Collect errors from known error keys — apply device offset
   const errors: string[] = [];
   const errorKeys = [
     "OverTemp", "HeaterStuck", "RegOverHeat", "RelayStuck",
@@ -860,7 +1081,7 @@ function parseStatusBlock(
   for (const key of errorKeys) {
     const acc = log?.[key];
     if (acc) {
-      const isErr = readBool(block, acc.p, acc.b ?? 0);
+      const isErr = readBool(block, devPos(acc.p), acc.b ?? 0);
       if (isErr) errors.push(key);
     }
   }
