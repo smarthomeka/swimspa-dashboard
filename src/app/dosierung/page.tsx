@@ -40,8 +40,11 @@ const CHEMICAL_UNITS: Record<string, string> = {
   "SpaLine Calcium+": "g",
 };
 
+const TZ = "Europe/Vienna";
+
 function formatTimestamp(iso: string) {
   return new Date(iso).toLocaleString("de-DE", {
+    timeZone: TZ,
     day: "2-digit",
     month: "2-digit",
     year: "numeric",

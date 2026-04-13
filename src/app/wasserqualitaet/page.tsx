@@ -40,9 +40,11 @@ const DOSING_METRIC_MAP: Record<string, string[]> = {
   alkalinity: ["SpaLine Calcium+"],
 };
 
+const TZ = "Europe/Vienna";
+
 function formatDateLabel(iso: string) {
   const d = new Date(iso);
-  return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+  return d.toLocaleDateString("de-DE", { timeZone: TZ, day: "2-digit", month: "2-digit" });
 }
 
 const METRICS = [
@@ -99,7 +101,7 @@ function CustomTooltip({ active, payload, label, metricLabel, color }: any) {
   return (
     <div className="rounded-xl border border-border/50 bg-card px-4 py-2.5 shadow-xl card-glow">
       <p className="text-[11px] font-medium text-muted-foreground">
-        {new Date(label).toLocaleString("de-DE")}
+        {new Date(label).toLocaleString("de-DE", { timeZone: TZ })}
       </p>
       <p className="mt-0.5 text-sm font-bold tabular-nums" style={{ color }}>
         {Number(val).toFixed(2).replace(".", ",")}

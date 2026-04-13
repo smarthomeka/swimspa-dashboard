@@ -7,6 +7,7 @@ import {
   getDailyEnergyConsumption,
 } from "@/lib/db/queries";
 import { getProviderSetting } from "@/lib/db/settings";
+import { APP_TIMEZONE } from "@/lib/format";
 
 const TARGET_RANGES: Record<string, { min: number; max: number; unit: string; label: string }> = {
   ph: { min: 7.2, max: 7.6, unit: "", label: "pH-Wert" },
@@ -166,7 +167,7 @@ export async function GET() {
     lines.push("## Letzte Dosierungen");
     lines.push("");
     for (const d of recentDosing) {
-      const dateStr = new Date(d.timestamp).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+      const dateStr = new Date(d.timestamp).toLocaleString("de-DE", { timeZone: APP_TIMEZONE, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
       lines.push(`- ${dateStr}: **${fmt(d.amountMl, 0)}g ${d.chemical}**${d.notes ? ` — ${d.notes}` : ""}`);
     }
   }

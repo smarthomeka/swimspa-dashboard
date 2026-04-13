@@ -328,7 +328,7 @@ function ProviderCard({
 
           {providerStatus?.polling && providerStatus.lastSyncAt && (
             <p className="text-[10px] text-muted-foreground">
-              Letzte Synchronisierung: {new Date(providerStatus.lastSyncAt).toLocaleString("de-DE")}
+              Letzte Synchronisierung: {new Date(providerStatus.lastSyncAt).toLocaleString("de-DE", { timeZone: "Europe/Vienna" })}
             </p>
           )}
 

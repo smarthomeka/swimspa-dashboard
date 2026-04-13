@@ -109,7 +109,8 @@ export async function GET(request: NextRequest) {
 
       const avgPowerW = (prev.value + curr.value) / 2;
       const kwh = (avgPowerW * dtMs) / (1000 * 3600_000);
-      const hour = new Date(prev.timestamp).getHours();
+      // Use Vienna timezone for tariff hour lookup
+      const hour = parseInt(new Date(prev.timestamp).toLocaleString("de-DE", { timeZone: "Europe/Vienna", hour: "2-digit", hour12: false }));
 
       const tariff = findTariffForHour(tariffConfig.tariffs, hour);
       const key = tariff.name;

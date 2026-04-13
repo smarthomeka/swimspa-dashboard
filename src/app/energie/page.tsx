@@ -42,9 +42,11 @@ interface EnergyCosts {
   breakdown: TariffBreakdown[];
 }
 
+const TZ = "Europe/Vienna";
+
 function formatDateLabel(d: string) {
   const dt = new Date(d);
-  return dt.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+  return dt.toLocaleDateString("de-DE", { timeZone: TZ, day: "2-digit", month: "2-digit" });
 }
 
 function ChartTooltip({ active, payload, label, formatter }: any) {
@@ -261,6 +263,7 @@ export default function EnergyPage() {
                   }
                   labelFormatter={(v) =>
                     new Date(v).toLocaleDateString("de-DE", {
+                      timeZone: TZ,
                       weekday: "short",
                       day: "2-digit",
                       month: "2-digit",
@@ -307,6 +310,7 @@ export default function EnergyPage() {
                   tickFormatter={(v) => {
                     const d = new Date(v);
                     return d.toLocaleString("de-DE", {
+                      timeZone: TZ,
                       day: "2-digit",
                       month: "2-digit",
                       hour: "2-digit",
@@ -336,7 +340,7 @@ export default function EnergyPage() {
                     />
                   }
                   labelFormatter={(v) =>
-                    new Date(v).toLocaleString("de-DE")
+                    new Date(v).toLocaleString("de-DE", { timeZone: TZ })
                   }
                 />
                 <Area
